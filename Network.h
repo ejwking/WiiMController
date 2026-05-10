@@ -30,12 +30,36 @@ Write your own SSDP client (UDP multicast to 239.255.255.250:1900)
 */
 
 
-struct WIIM_DEVICE
+struct WIIM_INFO
 {
 	std::string Name, IP, Model, SerialNumber;
 
-	int PlayerStatus; // 0 = Stopped, 1 = Playing, 2 = Paused
-	int Mute, Volume;
+	int type = 0;
+	int ch = 0;
+	int mode = 0;
+	int loop = 0;
+	int eq = 0;
+
+	std::string vendor;
+	std::string status;
+	std::string curpos;
+	std::string offset_pts;
+	std::string totlen;
+
+	std::string Title;
+	std::string Artist;
+	std::string Album;
+
+	std::string curpos_fmt;
+	std::string totlen_fmt;
+	std::string ArtUrl;
+
+
+	int alarmflag = 0;
+	int plicount = 0;
+	int plicurr = 0;
+	int vol = 0;
+	int mute = 0;
 };
 
 struct MEMORYSTRUCT
@@ -50,9 +74,7 @@ Request format is https://x.x.x.x/httpapi.asp?command=********
 x.x.x.x is the IP address of the device, ******* is the actual command.
 
 https://10.10.10.254/httpapi.asp?command=setPlayerCmd:play:url
-*/
 
-/*
 		Play,
 		Pause,
 		Stop,
@@ -63,26 +85,34 @@ https://10.10.10.254/httpapi.asp?command=setPlayerCmd:play:url
 		VolumeDown
 */
 
+
+// TODO - Multibye character set OR UNICODE support for Title, Artist, Album fields. Currently, only ASCII is supported (hex → ASCII conversion).
+
 class CWiimHttpClient
 {
 public:
 	CWiimHttpClient();
 	~CWiimHttpClient();
 
-	std::string GetPlayerStatus();
+	int GetPlayerStatus();
 	int SetBaseUrl(char *pUrl);
 	int PlayUrl();
 	int ToggleMute();
 
 private:
 	MEMORYSTRUCT m_data;
-	WIIM_DEVICE m_Wiim;
+	WIIM_INFO m_Wiim;
 	int m_Init;
 
-	int ReadJsonString();
+	int ParseJsonString();
 	int HttpRequest(std::string &url);
-
 	int SetPlayerCmd(char *cmd, char *arg_1=nullptr, char *arg_2=nullptr);
+	
 
-	std::string HexToString(const std::string& hex);
+
+	std::string ExtractArtworkUrl(const std::string& vendor);
+	std::string FormatTimeMs(const std::string& msStr);
+	std::string HexToUtf8(const std::string& hex);
+		//	std::string HexToString(const std::string& hex);
+	std::string UrlDecode(const std::string& src);
 };
