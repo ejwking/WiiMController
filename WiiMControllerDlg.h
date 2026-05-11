@@ -6,6 +6,12 @@
 
 #include "Network.h"
 
+#define LIST_MAX 100
+struct LISTDATA
+{
+	std::string name;
+	std::string url;
+};
 
 // CWiiMControllerDlg dialog
 class CWiiMControllerDlg : public CDialog
@@ -14,8 +20,7 @@ class CWiiMControllerDlg : public CDialog
 public:
 	CWiiMControllerDlg(CWnd* pParent = nullptr);	// standard constructor
 
-	
-	CWiimHttpClient m_httpClient; // MAYBE DONT OPEN CURL UNTIL FIRST REQUEST IS SENT, ALSO NO POINT UNTIL DISCOVERY IS DONE. LEAVE IT LIKE THIS FOR NOW.
+	CWiimHttpClient m_httpClient;
 
 
 // Dialog Data
@@ -26,6 +31,11 @@ public:
 protected:
 	virtual void DoDataExchange(CDataExchange* pDX);	// DDX/DDV support
 
+	void AddColumnsToStreamUrlList();
+	void AddListRow(int index);
+//	void AddStreamUrlToList(const std::string& url);
+
+	bool LoadStreamUrlsFromFile(const CString& filePath);
 
 // Implementation
 protected:
@@ -40,4 +50,13 @@ protected:
 	afx_msg void OnBnClickedBtnTest();
 public:
 	afx_msg void OnBnClickedBtnInit();
+	CListCtrl m_ListStream;
+
+	LISTDATA m_ListData[LIST_MAX];
+	int m_ItemCount;
+	CString m_StreamsFilepath;
+
+	afx_msg void OnLvnItemchangedListStreamurl(NMHDR *pNMHDR,LRESULT *pResult);
+	afx_msg void OnBnClickedBtnLoadFile();
+	afx_msg void OnBnClickedBtnBrowse();
 };

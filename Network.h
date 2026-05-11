@@ -32,6 +32,8 @@ Write your own SSDP client (UDP multicast to 239.255.255.250:1900)
 
 struct WIIM_INFO
 {
+	int Initialised = 0;
+
 	std::string Name, IP, Model, SerialNumber;
 
 	int type = 0;
@@ -53,7 +55,6 @@ struct WIIM_INFO
 	std::string curpos_fmt;
 	std::string totlen_fmt;
 	std::string ArtUrl;
-
 
 	int alarmflag = 0;
 	int plicount = 0;
@@ -86,7 +87,7 @@ https://10.10.10.254/httpapi.asp?command=setPlayerCmd:play:url
 */
 
 
-// TODO - Multibye character set OR UNICODE support for Title, Artist, Album fields. Currently, only ASCII is supported (hex → ASCII conversion).
+// Multibye character set OR UNICODE  ?
 
 class CWiimHttpClient
 {
@@ -96,18 +97,19 @@ public:
 
 	int GetPlayerStatus();
 	int SetBaseUrl(char *pUrl);
-	int PlayUrl();
+	int PlayUrl(const std::string& url);
 	int ToggleMute();
 
 private:
 	MEMORYSTRUCT m_data;
 	WIIM_INFO m_Wiim;
-	int m_Init;
+	int m_CurlGlobalInit;
 
 	int ParseJsonString();
 	int HttpRequest(std::string &url);
-	int SetPlayerCmd(char *cmd, char *arg_1=nullptr, char *arg_2=nullptr);
-	
+	int CurlGlobalInit_Ok();
+//	int SetPlayerCmd(char *cmd, char *arg_1=nullptr, char *arg_2=nullptr);
+	int SetPlayerCmd(const std::string& cmd, const std::string& arg_1="", const std::string& arg_2="");
 
 
 	std::string ExtractArtworkUrl(const std::string& vendor);

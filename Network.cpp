@@ -7,23 +7,18 @@ using json = nlohmann::json;
 
 CWiimHttpClient::CWiimHttpClient()
 {
-/*	curl_global_init()		once - (sets up: SSL backends, socket systems, global state, thread infrastructure)
-	curl_easy_init()		per request
-	curl_easy_cleanup()		per request
-	curl_global_cleanup()	once     */
-	curl_global_init(CURL_GLOBAL_ALL);
-
-	m_data.memory = (char*)malloc(1);  // grown as needed by realloc
-	m_data.size = 0; // no data at this point
-
-	m_Init = 0;
+	m_CurlGlobalInit = 0;
+	memset(&m_data, 0, sizeof(m_data));
 }
 
 CWiimHttpClient::~CWiimHttpClient()
 {
-	free(m_data.memory);
-	// we are done with libcurl, so clean it up 
-	curl_global_cleanup();
+	if(m_CurlGlobalInit){
+		free(m_data.memory);
+		// we are done with libcurl, so clean it up 
+		curl_global_cleanup();
+		m_CurlGlobalInit = 0;
+	}
 }
 
 // To put this callback in CWiimHttpClient it must be declared as static, and to access class members/data a 'this' pointer must be passed in via the userp argument. This is a common pattern for using C-style callbacks in C++ classes.
@@ -49,71 +44,101 @@ static size_t CurlMemoryCallback(void *contents, size_t size, size_t nmemb, void
 int CWiimHttpClient::HttpRequest(std::string &url)
 {
 	int Ok = 0;
-	CURL *curl_handle;
-	CURLcode res;
+	if(CurlGlobalInit_Ok()){
+		CURL *curl_handle;
+		CURLcode result;
+		// init the curl session
+		curl_handle = curl_easy_init();
+		// specify URL to get 
+		curl_easy_setopt(curl_handle, CURLOPT_URL, url.c_str());
 
-	// init the curl session
-	curl_handle = curl_easy_init();
+		// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// Specific setup to get the request working with the Wiim device. (Adjust these options based on your needs and security requirements).
 
-	// specify URL to get 
-	curl_easy_setopt(curl_handle, CURLOPT_URL, url.c_str());
+		// Disable verification of the peer's SSL certificate.
+		// - CURLOPT_SSL_VERIFYPEER == 0L turns off checking that the server's certificate is signed by a trusted CA. This is insecure for public
+		//   networks but is sometimes used for local devices with self-signed certificates. For production clients prefer 1L and provide a CA bundle.
+		curl_easy_setopt(curl_handle, CURLOPT_SSL_VERIFYPEER, 0L);
 
-	// COMMENT EACH line below...
-	curl_easy_setopt(curl_handle, CURLOPT_SSL_VERIFYPEER, 0L);
-	curl_easy_setopt(curl_handle, CURLOPT_SSL_VERIFYHOST, 0L);
-	curl_easy_setopt(curl_handle, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
-	curl_easy_setopt(curl_handle, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_0);
-	curl_easy_setopt(curl_handle, CURLOPT_TIMEOUT, 5L);
-	curl_easy_setopt(curl_handle, CURLOPT_NOSIGNAL, 1L);
-	///
+		// Disable verification that the server hostname matches the certificate.
+		// - CURLOPT_SSL_VERIFYHOST == 0L disables hostname checking. This further weakens TLS security. Use 2L to enable hostname verification.
+		curl_easy_setopt(curl_handle, CURLOPT_SSL_VERIFYHOST, 0L);
 
-	/* send all data to this function  */
-	curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, CurlMemoryCallback);
+		// Force DNS resolution to IPv4 only.
+		// - CURL_IPRESOLVE_V4 ensures the request uses an IPv4 address. Useful when the target device has issues with IPv6 or when the network
+		//   environment prefers IPv4.
+		curl_easy_setopt(curl_handle, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
 
-	/* we pass our m_data struct to the callback function */
-	curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&m_data);
+		// Use HTTP/1.0 for the request.
+		// - Some embedded or older HTTP servers require HTTP/1.0. If not required, consider using the default (HTTP/1.1 or negotiate HTTP/2) for better
+		//   performance and modern features.
+		curl_easy_setopt(curl_handle, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_0);
 
-	/* some servers do not like requests that are made without a user-agent	field, so we provide one */
-	curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
+		// Set a hard timeout for the entire transfer (in seconds).
+		// - CURLOPT_TIMEOUT = 5L limits the operation to 5 seconds to avoid blocking indefinitely. Tune this value based on network conditions.
+		curl_easy_setopt(curl_handle, CURLOPT_TIMEOUT, 5L);
 
-	/* get it! */
-	res = curl_easy_perform(curl_handle);
+		// Disable libcurl use of signals.
+		// - CURLOPT_NOSIGNAL = 1L prevents libcurl from installing signal handlers (e.g. SIGALRM). This is required in multi-threaded applications and on
+		//   some platforms to avoid unsafe signal interactions. It can slightly affect timeout granularity on some systems.
+		curl_easy_setopt(curl_handle, CURLOPT_NOSIGNAL, 1L);
+		// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-	/* check for errors */
-	if(res != CURLE_OK) {
-		TRACE("curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+		/* send all data to this function  */
+		curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, CurlMemoryCallback);
+
+		/* we pass our m_data struct to the callback function */
+		curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&m_data);
+
+		/* some servers do not like requests that are made without a user-agent	field, so we provide one */
+		curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
+
+		/* get it! */
+		result = curl_easy_perform(curl_handle);
+
+		/* check for errors */
+		if(result != CURLE_OK) {
+			TRACE("curl_easy_perform() failed: %s\n", curl_easy_strerror(result));
+		}
+		else {
+			// Now, our m_data.memory points to a memory block that is m_data.size bytes big and contains the remote file. Do something nice with it.
+			TRACE("\n\n%lu bytes retrieved\n\n%s\n\n", (long)m_data.size, m_data.memory);
+			Ok = 1;
+		}
+		/* cleanup curl stuff */
+		curl_easy_cleanup(curl_handle);
 	}
-	else {
-		// Now, our m_data.memory points to a memory block that is m_data.size bytes big and contains the remote file. Do something nice with it.
-		TRACE("\n\n%lu bytes retrieved\n\n%s\n\n", (long)m_data.size, m_data.memory);
-		Ok = 1;
-	}
-
-	/* cleanup curl stuff */
-	curl_easy_cleanup(curl_handle);
 	return Ok;
 }
 
-int CWiimHttpClient::SetPlayerCmd(char *cmd, char *arg_1, char *arg_2)
+int CWiimHttpClient::CurlGlobalInit_Ok()
 {
-	if(m_Init){
-		std::string Url = "https://" + m_Wiim.IP + "/httpapi.asp?command=setPlayerCmd:" + cmd;
+	if(!m_CurlGlobalInit){
+	/*	curl_global_init()		once - (sets up: SSL backends, socket systems, global state, thread infrastructure)
+		curl_easy_init()		per request
+		curl_easy_cleanup()		per request
+		curl_global_cleanup()	once     */
 
-		not working for mute..
-		if(arg_1 != nullptr) Url += ":" + *arg_1;
-		if(arg_2 != nullptr) Url += ":" + *arg_2;
+		curl_global_init(CURL_GLOBAL_ALL);
+		m_data.memory = (char*)malloc(1);  // grown as needed by realloc
+		m_data.size = 0; // no data at this point
+		m_CurlGlobalInit = 1;
+	}
+	return m_CurlGlobalInit;
+}
+
+int CWiimHttpClient::SetPlayerCmd(const std::string& cmd, const std::string& arg_1, const std::string& arg_2)
+{
+	if(CurlGlobalInit_Ok()){
+		std::string Url = "https://" + m_Wiim.IP + "/httpapi.asp?command=setPlayerCmd:" + cmd;
+		if(arg_1 != "")
+			Url += ":" + arg_1;
+		if(arg_2 != "")
+			Url += ":" + arg_2;
 		return HttpRequest(Url);
 	}
 	return 0;
 }
-
-/*
-//	curl_easy_setopt(curl_handle, CURLOPT_URL, "https://www.example.com/");
-curl_easy_setopt(curl_handle, CURLOPT_URL, "https://192.168.0.228/httpapi.asp?command=getPlayerStatus");
-//	curl_easy_setopt(curl_handle, CURLOPT_URL, "https://192.168.0.228/httpapi.asp?command=setPlayerCmd:play:http://as-hls-ww-live.akamaized.net/pool_92079267/live/ww/bbc_1xtra/bbc_1xtra.isml/bbc_1xtra-audio%3d320000.norewind.m3u8");
-//	curl_easy_setopt(curl_handle, CURLOPT_URL, "https://192.168.0.228/httpapi.asp?command=setPlayerCmd:mute:0");
-//	curl_easy_setopt(curl_handle, CURLOPT_URL, "https://192.168.0.228/httpapi.asp?command=setPlayerCmd:play:http://listen-boomradio.sharp-stream.com/65_boom_light_256_aac?ref=RF");
-*/
 
 int CWiimHttpClient::SetBaseUrl(char *pUrl)
 {
@@ -129,25 +154,22 @@ int CWiimHttpClient::SetBaseUrl(char *pUrl)
 
 int CWiimHttpClient::GetPlayerStatus()
 {
-	// Use getPlayerStatusEx for a lot more info.
-	//
-	// getPlayerStatus example string:
+	// getPlayerStatus example string (Use getPlayerStatusEx for a lot more info) :
 	// {\"type\":\"0\",\"ch\":\"0\",\"mode\":\"31\",\"loop\":\"3\",\"eq\":\"0\",\"vendor\":\"spotify:search:Run+Up+%28feat.+PARTYNEXTDOOR+%26+Nicki+Minaj%29+Major+Lazer\",\"status\":\"play\",\"curpos\":\"118816\",\"offset_pts\":\"0\",\"totlen\":\"201254\",\"Title\":\"427920596F75722053696465\",\"Artist\":\"4A6F6E617320426C7565\",\"Album\":\"426C7565\",\"alarmflag\":\"0\",\"plicount\":\"0\",\"plicurr\":\"0\",\"vol\":\"65\",\"mute\":\"0\"}
-
 	std::string Url = "https://" + m_Wiim.IP + "/httpapi.asp?command=getPlayerStatus";
 	if(HttpRequest(Url)){
 		if(ParseJsonString()){
-			m_Init = 1;
+			m_Wiim.Initialised = 1;
 			return 1;
 		}
 	}
-	m_Init = 0;
+	m_Wiim.Initialised = 0;
 	return 0;
 }
 
-int CWiimHttpClient::PlayUrl()
+int CWiimHttpClient::PlayUrl(const std::string& url)
 {
-	return SetPlayerCmd("play", "http://as-hls-ww-live.akamaized.net/pool_92079267/live/ww/bbc_1xtra/bbc_1xtra.isml/bbc_1xtra-audio%3d320000.norewind.m3u8");
+	return SetPlayerCmd("play", url);
 }
 
 int CWiimHttpClient::ToggleMute()
