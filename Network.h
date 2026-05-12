@@ -41,6 +41,7 @@ struct WIIM_INFO
 	int mode = 0;
 	int loop = 0;
 	int eq = 0;
+	int EqualiserOn = 0;
 
 	std::string vendor;
 	std::string status;
@@ -66,7 +67,8 @@ struct WIIM_INFO
 struct MEMORYSTRUCT
 {
 	char *memory;
-	size_t size;
+	size_t mem_size;
+	size_t response_size;
 };
 
 /*
@@ -95,26 +97,32 @@ public:
 	CWiimHttpClient();
 	~CWiimHttpClient();
 
-	int GetPlayerStatus();
+	CString m_LastStatus;
+
+	int GetPlayerStatus(int extended=0);
+	int UpdatePlayerStatusString();
+
 	int SetBaseUrl(char *pUrl);
+	char *GetEQList();
 	int PlayUrl(const std::string& url);
 	int ToggleMute();
+	int ToggleEqualiserOnOff();
 
 private:
+	char m_LastResponse[2000];
 	MEMORYSTRUCT m_data;
 	WIIM_INFO m_Wiim;
 	int m_CurlGlobalInit;
 
 	int ParseJsonString();
 	int HttpRequest(std::string &url);
+	void CurlWiimConfig(CURL *curl_handle);
 	int CurlGlobalInit_Ok();
 //	int SetPlayerCmd(char *cmd, char *arg_1=nullptr, char *arg_2=nullptr);
 	int SetPlayerCmd(const std::string& cmd, const std::string& arg_1="", const std::string& arg_2="");
 
-
 	std::string ExtractArtworkUrl(const std::string& vendor);
 	std::string FormatTimeMs(const std::string& msStr);
 	std::string HexToUtf8(const std::string& hex);
-		//	std::string HexToString(const std::string& hex);
 	std::string UrlDecode(const std::string& src);
 };

@@ -42,7 +42,7 @@ These macros handle Unicode/ANSI correctly.
 #include "WiiMController.h"
 #include "WiiMControllerDlg.h"
 #include "afxdialogex.h"
-
+#include "tools.h"
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -55,12 +55,15 @@ CWiiMControllerDlg::CWiiMControllerDlg(CWnd* pParent /*=nullptr*/)
 {
 	m_hIcon = AfxGetApp()->LoadIcon(IDR_MAINFRAME);
 	m_ItemCount = 0;
+
+	m_httpClient.SetBaseUrl("192.168.0.228");
 }
 
 void CWiiMControllerDlg::DoDataExchange(CDataExchange* pDX)
 {
 	CDialog::DoDataExchange(pDX);
 	DDX_Control(pDX, IDC_LIST_STREAMURL, m_ListStream);
+	DDX_Control(pDX, IDC_LIST_EQ, m_ListEQ);
 }
 
 BEGIN_MESSAGE_MAP(CWiiMControllerDlg, CDialog)
@@ -71,6 +74,7 @@ BEGIN_MESSAGE_MAP(CWiiMControllerDlg, CDialog)
 	ON_NOTIFY(LVN_ITEMCHANGED,IDC_LIST_STREAMURL,&CWiiMControllerDlg::OnLvnItemchangedListStreamurl)
 	ON_BN_CLICKED(IDC_BTN_LOAD_FILE,&CWiiMControllerDlg::OnBnClickedBtnLoadFile)
 	ON_BN_CLICKED(IDC_BTN_BROWSE,&CWiiMControllerDlg::OnBnClickedBtnBrowse)
+	ON_BN_CLICKED(IDC_BTN_TOGGLE_EQ,&CWiiMControllerDlg::OnBnClickedBtnToggleEq)
 END_MESSAGE_MAP()
 
 
@@ -86,10 +90,15 @@ BOOL CWiiMControllerDlg::OnInitDialog()
 	SetIcon(m_hIcon, FALSE);		// Set small icon
 
 	// TODO: Add extra initialization here
+	LoadEditboxFont(GetDlgItem(IDC_EDIT_STATUS));
 	AddColumnsToStreamUrlList();
+
+	m_ListEQ.SetExtendedStyle(LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
+	m_ListEQ.InsertColumn(0, _T("Equaliser presets"), LVCFMT_LEFT, 150);
 
 	m_StreamsFilepath = AfxGetApp()->GetProfileString(REG_SECTION, _T("StreamsFilepath"), _T(""));
 	GetDlgItem(IDC_EDIT_STREAMSFILE)->SetWindowText(m_StreamsFilepath);
+	OnBnClickedBtnLoadFile();
 
 	return TRUE;  // return TRUE  unless you set the focus to a control
 }
@@ -141,8 +150,8 @@ void CWiiMControllerDlg::AddColumnsToStreamUrlList()
 void CWiiMControllerDlg::AddListRow(int index)
 {
 	const LISTDATA &d = m_ListData[index];
-	int item = m_ListStream.InsertItem(index, CA2T(d.name.c_str()));
-	m_ListStream.SetItemText(item, 1, CA2T(d.url.c_str()));
+	int item = m_ListStream.InsertItem(index, d.name);
+	m_ListStream.SetItemText(item, 1, d.url);
 }
 
 bool CWiiMControllerDlg::LoadStreamUrlsFromFile(const CString& filePath)
@@ -171,8 +180,8 @@ bool CWiiMControllerDlg::LoadStreamUrlsFromFile(const CString& filePath)
 					// also test theres not an empty line between name and url.
 
 					// Store in your struct array
-					m_ListData[m_ItemCount].name = CT2A(name);
-					m_ListData[m_ItemCount].url  = CT2A(url);
+					m_ListData[m_ItemCount].name = name;
+					m_ListData[m_ItemCount].url  = url;
 					m_ItemCount++;
 				}
 				else{
@@ -191,11 +200,21 @@ void CWiiMControllerDlg::OnBnClickedBtnTest()
 
 //	m_httpClient.ToggleMute();
 	// TODO: Add your control notification handler code here
+
+	m_httpClient.GetEQList();
+	GetDlgItem(IDC_EDIT_STATUS)->SetWindowText(m_httpClient.m_LastStatus);
 }
 
 void CWiiMControllerDlg::OnBnClickedBtnInit()
 {
-//	m_httpClient.SetBaseUrl("192.168.0.228");
+	if(m_httpClient.GetPlayerStatus()){
+		GetDlgItem(IDC_EDIT_STATUS)->SetWindowText(m_httpClient.m_LastStatus);
+
+	/*	char *pEQList = m_httpClient.GetEQList();
+		if(pEQList){
+			TRACE("\n\nEQ List: %s\n\n", pEQList);
+		}*/
+	}
 }
 
 void CWiiMControllerDlg::OnLvnItemchangedListStreamurl(NMHDR *pNMHDR, LRESULT *pResult)
@@ -203,19 +222,18 @@ void CWiiMControllerDlg::OnLvnItemchangedListStreamurl(NMHDR *pNMHDR, LRESULT *p
 	LPNMLISTVIEW pNMLV = reinterpret_cast<LPNMLISTVIEW>(pNMHDR);
 	// TODO: Add your control notification handler code here
 	*pResult = 0;
-
 	TRACE("\n\n %d", pNMLV->iItem); // index of the changed item
-
-	m_httpClient.SetBaseUrl("192.168.0.228");
-
-	m_httpClient.PlayUrl(m_ListData[pNMLV->iItem].url);
+	std::string url = CT2A(m_ListData[pNMLV->iItem].url);
+	m_httpClient.PlayUrl(url);
+	GetDlgItem(IDC_EDIT_STATUS)->SetWindowText(m_httpClient.m_LastStatus);
 }
 
 void CWiiMControllerDlg::OnBnClickedBtnLoadFile()
 {
-	if(LoadStreamUrlsFromFile(m_StreamsFilepath))
-		for(int i=0; i<m_ItemCount; i++)
-			AddListRow(i);
+	if(PathFileExists(m_StreamsFilepath))
+		if(LoadStreamUrlsFromFile(m_StreamsFilepath))
+			for(int i=0; i<m_ItemCount; i++)
+				AddListRow(i);
 }
 
 void CWiiMControllerDlg::OnBnClickedBtnBrowse()
@@ -230,4 +248,11 @@ void CWiiMControllerDlg::OnBnClickedBtnBrowse()
 	}
 }
 
-// need a sort button as well.
+void CWiiMControllerDlg::OnBnClickedBtnToggleEq()
+{
+	m_httpClient.ToggleEqualiserOnOff();
+	GetDlgItem(IDC_EDIT_STATUS)->SetWindowText(m_httpClient.m_LastStatus);
+}
+
+
+

@@ -6,11 +6,13 @@
 
 #include "Network.h"
 
-#define LIST_MAX 100
+#define EQ_MAX 150
+
+#define LIST_MAX 256
 struct LISTDATA
 {
-	std::string name;
-	std::string url;
+	CString name;
+	CString url;
 };
 
 // CWiiMControllerDlg dialog
@@ -50,7 +52,9 @@ protected:
 	afx_msg void OnBnClickedBtnTest();
 public:
 	afx_msg void OnBnClickedBtnInit();
-	CListCtrl m_ListStream;
+	CListCtrl m_ListStream, m_ListEQ;
+
+	CString m_EQname[EQ_MAX];
 
 	LISTDATA m_ListData[LIST_MAX];
 	int m_ItemCount;
@@ -59,4 +63,5 @@ public:
 	afx_msg void OnLvnItemchangedListStreamurl(NMHDR *pNMHDR,LRESULT *pResult);
 	afx_msg void OnBnClickedBtnLoadFile();
 	afx_msg void OnBnClickedBtnBrowse();
+	afx_msg void OnBnClickedBtnToggleEq();
 };
