@@ -29,39 +29,33 @@ miniupnpc → simple, widely used
 Write your own SSDP client (UDP multicast to 239.255.255.250:1900)
 */
 
-
-struct WIIM_INFO
+struct WIIM_STATUS
 {
 	int Initialised = 0;
-
-	std::string Name, IP, Model, SerialNumber;
 
 	int type = 0;
 	int ch = 0;
 	int mode = 0;
 	int loop = 0;
 	int eq = 0;
-	int EqualiserOn = 0;
 
-	std::string vendor;
-	std::string status;
-	std::string curpos;
-	std::string offset_pts;
-	std::string totlen;
-
-	std::string Title;
-	std::string Artist;
-	std::string Album;
-
-	std::string curpos_fmt;
-	std::string totlen_fmt;
-	std::string ArtUrl;
+	std::string Name, IP, Model, SerialNumber;
+	std::string vendor, status, offset_pts;
+	std::string Title, Artist, Album, ArtUrl;
+	std::string curpos, curpos_fmt;
+	std::string totlen, totlen_fmt;
 
 	int alarmflag = 0;
 	int plicount = 0;
 	int plicurr = 0;
 	int vol = 0;
 	int mute = 0;
+};
+
+struct WIIM_EQUALISER
+{
+	std::string status, source_name, EQStat, Name, pluginURI, channelMode;
+	int EQLevel;
 };
 
 struct MEMORYSTRUCT
@@ -76,20 +70,16 @@ You can send 'HTTPs Get' request to the device, most of the response is in the J
 Request format is https://x.x.x.x/httpapi.asp?command=********
 x.x.x.x is the IP address of the device, ******* is the actual command.
 
-https://10.10.10.254/httpapi.asp?command=setPlayerCmd:play:url
-
-		Play,
-		Pause,
-		Stop,
-		Next,
-		Previous,
-		Mute,
-		VolumeUp,
-		VolumeDown
+	Play,
+	Pause,
+	Stop,
+	Next,
+	Previous,
+	Mute,
+	VolumeUp,
+	VolumeDown
 */
 
-
-// Multibye character set OR UNICODE  ?
 
 class CWiimHttpClient
 {
@@ -97,29 +87,34 @@ public:
 	CWiimHttpClient();
 	~CWiimHttpClient();
 
-	CString m_LastStatus;
+	WIIM_STATUS m_Wiim;
 
 	int GetPlayerStatus(int extended=0);
-	int UpdatePlayerStatusString();
-
 	int SetBaseUrl(char *pUrl);
 	char *GetEQList();
+	int TogglePlay();
 	int PlayUrl(const std::string& url);
+	int GetEqStatus(int &EqualiserOn, CString &CurrentEqName);
+	int EQLoad(char *pName);
 	int ToggleMute();
+	int VolumeStep(int step); // positive or negative
 	int ToggleEqualiserOnOff();
 
 private:
 	char m_LastResponse[2000];
+	
 	MEMORYSTRUCT m_data;
-	WIIM_INFO m_Wiim;
-	int m_CurlGlobalInit;
+	WIIM_EQUALISER m_Eq;
 
-	int ParseJsonString();
+	int m_CurlGlobalInit;
+	int m_EqualiserOn = 0;
+
+	int ParseJsonString_PlayerStatus();
+	int ParseJsonString_EqBand();
 	int HttpRequest(std::string &url);
 	void CurlWiimConfig(CURL *curl_handle);
 	int CurlGlobalInit_Ok();
-//	int SetPlayerCmd(char *cmd, char *arg_1=nullptr, char *arg_2=nullptr);
-	int SetPlayerCmd(const std::string& cmd, const std::string& arg_1="", const std::string& arg_2="");
+	int SendCommand(const std::string& command, const std::string& arg_1="", const std::string& arg_2="");
 
 	std::string ExtractArtworkUrl(const std::string& vendor);
 	std::string FormatTimeMs(const std::string& msStr);

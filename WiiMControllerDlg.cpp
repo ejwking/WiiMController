@@ -31,10 +31,7 @@ std::string to CString
 CString cstr = CA2T(s.c_str());
 
 These macros handle Unicode/ANSI correctly.
-
 */
-
-
 
 
 #include "pch.h"
@@ -54,9 +51,12 @@ CWiiMControllerDlg::CWiiMControllerDlg(CWnd* pParent /*=nullptr*/)
 	: CDialog(IDD_WIIMCONTROLLER_DIALOG, pParent)
 {
 	m_hIcon = AfxGetApp()->LoadIcon(IDR_MAINFRAME);
-	m_ItemCount = 0;
+	m_NumStream = 0;
+	m_NumEQ = 0;
+	m_InitUI = 0;
 
 	m_httpClient.SetBaseUrl("192.168.0.228");
+	m_DeviceAvailable = 1;	// temp until discovery is implemented, just assume the device is available for now.
 }
 
 void CWiiMControllerDlg::DoDataExchange(CDataExchange* pDX)
@@ -69,12 +69,18 @@ void CWiiMControllerDlg::DoDataExchange(CDataExchange* pDX)
 BEGIN_MESSAGE_MAP(CWiiMControllerDlg, CDialog)
 	ON_WM_PAINT()
 	ON_WM_QUERYDRAGICON()
-	ON_BN_CLICKED(IDC_BTN_TEST,&CWiiMControllerDlg::OnBnClickedBtnTest)
-	ON_BN_CLICKED(IDC_BTN_INIT,&CWiiMControllerDlg::OnBnClickedBtnInit)
+	
 	ON_NOTIFY(LVN_ITEMCHANGED,IDC_LIST_STREAMURL,&CWiiMControllerDlg::OnLvnItemchangedListStreamurl)
+	ON_NOTIFY(LVN_ITEMCHANGED,IDC_LIST_EQ,&CWiiMControllerDlg::OnLvnItemchangedListEq)
+
+	ON_BN_CLICKED(IDC_BTN_TEST,&CWiiMControllerDlg::OnBnClickedBtnTest)
 	ON_BN_CLICKED(IDC_BTN_LOAD_FILE,&CWiiMControllerDlg::OnBnClickedBtnLoadFile)
 	ON_BN_CLICKED(IDC_BTN_BROWSE,&CWiiMControllerDlg::OnBnClickedBtnBrowse)
 	ON_BN_CLICKED(IDC_BTN_TOGGLE_EQ,&CWiiMControllerDlg::OnBnClickedBtnToggleEq)
+	ON_BN_CLICKED(IDC_BTN_REFRESH_STATS,&CWiiMControllerDlg::OnBnClickedBtnRefreshStats)
+	ON_BN_CLICKED(IDC_BTN_VOL_UP,&CWiiMControllerDlg::OnBnClickedBtnVolUp)
+	ON_BN_CLICKED(IDC_BTN_VOL_DOWN,&CWiiMControllerDlg::OnBnClickedBtnVolDown)
+	ON_BN_CLICKED(IDC_BTN_MUTE,&CWiiMControllerDlg::OnBnClickedBtnMute)
 END_MESSAGE_MAP()
 
 
@@ -90,29 +96,33 @@ BOOL CWiiMControllerDlg::OnInitDialog()
 	SetIcon(m_hIcon, FALSE);		// Set small icon
 
 	// TODO: Add extra initialization here
-	LoadEditboxFont(GetDlgItem(IDC_EDIT_STATUS));
-	AddColumnsToStreamUrlList();
-
-	m_ListEQ.SetExtendedStyle(LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
-	m_ListEQ.InsertColumn(0, _T("Equaliser presets"), LVCFMT_LEFT, 150);
+//	LoadEditboxFont(GetDlgItem(IDC_EDIT_STATUS));
 
 	m_StreamsFilepath = AfxGetApp()->GetProfileString(REG_SECTION, _T("StreamsFilepath"), _T(""));
 	GetDlgItem(IDC_EDIT_STREAMSFILE)->SetWindowText(m_StreamsFilepath);
-	OnBnClickedBtnLoadFile();
+
+	// stream url list initialisation
+	m_ListStream.SetExtendedStyle(LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
+	m_ListStream.InsertColumn(0, _T("Stream Name"), LVCFMT_LEFT, 150);	// add 2 columns, 1) stream name, 2) stream URL
+	m_ListStream.InsertColumn(1, _T("Stream URL"), LVCFMT_LEFT, 1000);
+	LoadStreamUrlList();
+
+	// equaliser presets list initialisation
+	m_ListEQ.SetExtendedStyle(LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
+	m_ListEQ.InsertColumn(0, _T("Equaliser presets"), LVCFMT_LEFT, 200);
+
+	GetInfoFromDevice();
 
 	return TRUE;  // return TRUE  unless you set the focus to a control
 }
 
-// If you add a minimize button to your dialog, you will need the code below
-//  to draw the icon.  For MFC applications using the document/view model,
-//  this is automatically done for you by the framework.
-
+// If you add a minimize button to your dialog, you will need the code below to draw the icon. For MFC 
+// applications using the document/view model, this is automatically done for you by the framework.
 void CWiiMControllerDlg::OnPaint()
 {
 	if (IsIconic())
 	{
 		CPaintDC dc(this); // device context for painting
-
 		SendMessage(WM_ICONERASEBKGND, reinterpret_cast<WPARAM>(dc.GetSafeHdc()), 0);
 
 		// Center icon in client rectangle
@@ -139,19 +149,86 @@ HCURSOR CWiiMControllerDlg::OnQueryDragIcon()
 	return static_cast<HCURSOR>(m_hIcon);
 }
 
-void CWiiMControllerDlg::AddColumnsToStreamUrlList()
+void CWiiMControllerDlg::GetInfoFromDevice()
 {
-	m_ListStream.SetExtendedStyle(LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
-	// add 2 columns, 1) stream name, 2) stream URL
-	m_ListStream.InsertColumn(0, _T("Stream Name"), LVCFMT_LEFT, 150);
-	m_ListStream.InsertColumn(1, _T("Stream URL"), LVCFMT_LEFT, 2000);
+	if(m_DeviceAvailable){
+		m_httpClient.GetPlayerStatus();
+		UpdateStatusEditBox();
+
+		/* the text in m_Wiim.Title is slightly converted/adjusted from the original Title string sent to the device, the % symbol has been converted to =, I am not sure why 
+		   but it means this comparison doesnt work properly, so I cant highlight the currently playing stream when the app starts up. ToDo investigate and fix.
+		for(int i=0; i<m_NumStream; i++){
+			if(m_ListStreamData[i].url.Compare(Utf8(m_httpClient.m_Wiim.Title)) == 0){
+				m_ListStream.SetItemState(i, LVIS_SELECTED, LVIS_SELECTED);
+				m_ListStream.EnsureVisible(i, FALSE);
+				break;
+			}
+		} */
+
+		// Next get the equaliser presets list, and the current equaliser status, so we can populate the equaliser presets list and highlight the currently selected preset.
+		LoadEqualiserPresetsList(m_httpClient.GetEQList());
+		CString CurrentEqName;
+		int EqEnabled = -1;
+		m_httpClient.GetEqStatus(EqEnabled, CurrentEqName);
+		if(EqEnabled==1 || EqEnabled==0)
+			GetDlgItem(IDC_BTN_TOGGLE_EQ)->SetWindowText(EqEnabled ? _T("Equaliser is ON") : _T("Equaliser is OFF"));
+		else
+			GetDlgItem(IDC_BTN_TOGGLE_EQ)->SetWindowText(_T("Equaliser is ???"));
+
+		for(int i=0; i<m_NumEQ; i++){
+			if(m_EQname[i].Compare(CurrentEqName) == 0){
+				m_ListEQ.SetItemState(i, LVIS_SELECTED, LVIS_SELECTED);
+				m_ListEQ.EnsureVisible(i, FALSE);
+				break;
+			}
+		}
+		m_InitUI = 1;
+	}
 }
 
-void CWiiMControllerDlg::AddListRow(int index)
+void CWiiMControllerDlg::OnBnClickedBtnRefreshStats()
 {
-	const LISTDATA &d = m_ListData[index];
-	int item = m_ListStream.InsertItem(index, d.name);
-	m_ListStream.SetItemText(item, 1, d.url);
+	if(m_DeviceAvailable && m_InitUI){
+		m_httpClient.GetPlayerStatus();
+		UpdateStatusEditBox();
+	}
+}
+
+void CWiiMControllerDlg::OnBnClickedBtnToggleEq()
+{
+	if(m_DeviceAvailable && m_InitUI){
+		int EqEnabled = m_httpClient.ToggleEqualiserOnOff();
+		GetDlgItem(IDC_BTN_TOGGLE_EQ)->SetWindowText(EqEnabled ? _T("Equaliser is ON") : _T("Equaliser is OFF"));
+	}
+}
+
+void CWiiMControllerDlg::LoadEqualiserPresetsList(char *str)
+{
+	// example:  "[ \"Flat\", \"Acoustic\", \"Bass Booster\", \"Bass Reducer\", \"Classical\", \"Dance\", \"Deep\", \"Electronic\", \"Game\", \"Hip-Hop\", \"Jazz\", \"Latin\", \"Loudness\", \"Lounge\", \"Movie\", \"Piano\", \"Pop\", \"R&B\", \"Rock\", \"Small Speakers\", \"Spoken Word\", \"Treble Booster\", \"Treble Reducer\", \"Vocal Booster\", \"bass up treble down\", \"low frequencys up\", \"middle down\", \"middle down 2\" ]";
+	char TempBuf[256];
+	m_ListEQ.DeleteAllItems();
+	m_NumEQ = 0;
+	while(str && m_NumEQ<EQ_MAX){
+		char *start = strchr(str, '\"');
+		if(!start)
+			break;
+		char *end = strchr(start + 1, '\"');
+		if(!end)
+			break;
+		size_t len = (end - start) - 1;
+		if(len+1 < sizeof(TempBuf)){
+			strncpy_s(TempBuf, sizeof(TempBuf), start+1, len);
+			TempBuf[len] = '\0'; // null-terminate the string
+			m_EQname[m_NumEQ] = TempBuf; // assign to CString, which will handle memory management
+			m_ListEQ.InsertItem(m_NumEQ, m_EQname[m_NumEQ]);
+			m_NumEQ++;
+		}
+		else{
+			AfxMessageBox(_T("error - Equalise Preset name too long"));
+			break;
+		}
+		str = end + 1;
+	}
 }
 
 bool CWiiMControllerDlg::LoadStreamUrlsFromFile(const CString& filePath)
@@ -162,11 +239,11 @@ bool CWiiMControllerDlg::LoadStreamUrlsFromFile(const CString& filePath)
 
 	m_ListStream.DeleteAllItems(); // Clear existing items before loading new ones
 	CString line;
-	m_ItemCount = 0;
+	m_NumStream = 0;
 	while (file.ReadString(line)){
 		if(!line.IsEmpty()){	// skip empty lines
 			if(line[0] != '#'){	// skip lines starting with # (comments)
-				if(m_ItemCount < LIST_MAX){
+				if(m_NumStream < LIST_MAX){
 					CString name = line;
 					// Read URL line
 					if (!file.ReadString(line))
@@ -175,14 +252,13 @@ bool CWiiMControllerDlg::LoadStreamUrlsFromFile(const CString& filePath)
 					name.Trim(); // Remove leading/trailing whitespace
 					url.Trim();
 
-					// to do, 
-					// test that url looks like a URL, starts with http:// or https://.
+					// to do, test that url looks like a URL, starts with http:// or https://.
 					// also test theres not an empty line between name and url.
 
 					// Store in your struct array
-					m_ListData[m_ItemCount].name = name;
-					m_ListData[m_ItemCount].url  = url;
-					m_ItemCount++;
+					m_ListStreamData[m_NumStream].name = name;
+					m_ListStreamData[m_NumStream].url  = url;
+					m_NumStream++;
 				}
 				else{
 					AfxMessageBox(_T("Reached maximum list capacity. Some entries may not be loaded."));
@@ -197,24 +273,11 @@ bool CWiiMControllerDlg::LoadStreamUrlsFromFile(const CString& filePath)
 
 void CWiiMControllerDlg::OnBnClickedBtnTest()
 {
-
 //	m_httpClient.ToggleMute();
 	// TODO: Add your control notification handler code here
 
-	m_httpClient.GetEQList();
-	GetDlgItem(IDC_EDIT_STATUS)->SetWindowText(m_httpClient.m_LastStatus);
-}
-
-void CWiiMControllerDlg::OnBnClickedBtnInit()
-{
-	if(m_httpClient.GetPlayerStatus()){
-		GetDlgItem(IDC_EDIT_STATUS)->SetWindowText(m_httpClient.m_LastStatus);
-
-	/*	char *pEQList = m_httpClient.GetEQList();
-		if(pEQList){
-			TRACE("\n\nEQ List: %s\n\n", pEQList);
-		}*/
-	}
+//	m_httpClient.GetEQList();
+//	GetDlgItem(IDC_EDIT_STATUS)->SetWindowText(m_httpClient.m_LastStatus);
 }
 
 void CWiiMControllerDlg::OnLvnItemchangedListStreamurl(NMHDR *pNMHDR, LRESULT *pResult)
@@ -222,18 +285,67 @@ void CWiiMControllerDlg::OnLvnItemchangedListStreamurl(NMHDR *pNMHDR, LRESULT *p
 	LPNMLISTVIEW pNMLV = reinterpret_cast<LPNMLISTVIEW>(pNMHDR);
 	// TODO: Add your control notification handler code here
 	*pResult = 0;
-	TRACE("\n\n %d", pNMLV->iItem); // index of the changed item
-	std::string url = CT2A(m_ListData[pNMLV->iItem].url);
-	m_httpClient.PlayUrl(url);
-	GetDlgItem(IDC_EDIT_STATUS)->SetWindowText(m_httpClient.m_LastStatus);
+	if(m_DeviceAvailable && m_InitUI){
+		TRACE("\n\nOnLvnItemchangedListStreamurl %d", pNMLV->iItem); // index of the changed item
+		std::string url = CT2A(m_ListStreamData[pNMLV->iItem].url);
+		m_httpClient.PlayUrl(url);
+		UpdateStatusEditBox();
+	}
+}
+
+void CWiiMControllerDlg::OnLvnItemchangedListEq(NMHDR *pNMHDR,LRESULT *pResult)
+{
+	LPNMLISTVIEW pNMLV = reinterpret_cast<LPNMLISTVIEW>(pNMHDR);
+	// TODO: Add your control notification handler code here
+	*pResult = 0;
+	if(m_DeviceAvailable && m_InitUI){
+		char Name[256] = {0};
+		strcpy_s(Name, sizeof(Name), CT2A(m_EQname[pNMLV->iItem]));
+		m_httpClient.EQLoad(Name);
+
+		this isnt working. wonder if its the spaces in "bass up treble down" that are causing problems,
+			the default presets seems to work.
+	}
+}
+
+void CWiiMControllerDlg::LoadStreamUrlList()
+{
+	if(PathFileExists(m_StreamsFilepath))
+		if(LoadStreamUrlsFromFile(m_StreamsFilepath))
+			for(int i=0; i<m_NumStream; i++){
+				int item = m_ListStream.InsertItem(i, m_ListStreamData[i].name);
+				m_ListStream.SetItemText(item, 1, m_ListStreamData[i].url);
+			}
+}
+
+void CWiiMControllerDlg::UpdateStatusEditBox()
+{
+	UpdatePlayerStatusString();
+	GetDlgItem(IDC_EDIT_STATUS)->SetWindowText(m_LastStatus);
+}
+
+void CWiiMControllerDlg::UpdatePlayerStatusString()
+{
+	m_LastStatus.Empty();
+	if(m_httpClient.m_Wiim.Initialised){
+		//	std::string title = (m_httpClient.m_Wiim.vendor == "CustomPushUrl") ? "Custom URL" : m_httpClient.m_Wiim.Title;
+		std::string title = m_httpClient.m_Wiim.Title;
+		m_LastStatus.Format(_T("Title: %s\r\nArtist: %s\r\nAlbum: %s\r\nPosition: %s / %s\r\nStatus: %s\r\nPlaylist: %d / %d\r\nVolume: %d\r\nMute: %d"),
+			Utf8(title),
+			Utf8(m_httpClient.m_Wiim.Artist),
+			Utf8(m_httpClient.m_Wiim.Album),
+			Utf8(m_httpClient.m_Wiim.curpos_fmt),
+			Utf8(m_httpClient.m_Wiim.totlen_fmt),
+			Utf8(m_httpClient.m_Wiim.status),
+			m_httpClient.m_Wiim.plicurr, m_httpClient.m_Wiim.plicount,
+			m_httpClient.m_Wiim.vol, m_httpClient.m_Wiim.mute
+		);
+	}
 }
 
 void CWiiMControllerDlg::OnBnClickedBtnLoadFile()
 {
-	if(PathFileExists(m_StreamsFilepath))
-		if(LoadStreamUrlsFromFile(m_StreamsFilepath))
-			for(int i=0; i<m_ItemCount; i++)
-				AddListRow(i);
+	LoadStreamUrlList();
 }
 
 void CWiiMControllerDlg::OnBnClickedBtnBrowse()
@@ -243,16 +355,29 @@ void CWiiMControllerDlg::OnBnClickedBtnBrowse()
 		m_StreamsFilepath = FileDlg.GetPathName();
 		GetDlgItem(IDC_EDIT_STREAMSFILE)->SetWindowText(m_StreamsFilepath);
 		AfxGetApp()->WriteProfileString(REG_SECTION, _T("StreamsFilepath"), m_StreamsFilepath);
-
-	//	UpdateData(0); // to dlg
 	}
 }
 
-void CWiiMControllerDlg::OnBnClickedBtnToggleEq()
+void CWiiMControllerDlg::OnBnClickedBtnVolUp()
 {
-	m_httpClient.ToggleEqualiserOnOff();
-	GetDlgItem(IDC_EDIT_STATUS)->SetWindowText(m_httpClient.m_LastStatus);
+	if(m_DeviceAvailable && m_InitUI){
+		m_httpClient.VolumeStep(1);
+		UpdateStatusEditBox();
+	}
 }
 
+void CWiiMControllerDlg::OnBnClickedBtnVolDown()
+{
+	if(m_DeviceAvailable && m_InitUI){
+		m_httpClient.VolumeStep(-1);
+		UpdateStatusEditBox();
+	}
+}
 
-
+void CWiiMControllerDlg::OnBnClickedBtnMute()
+{
+	if(m_DeviceAvailable && m_InitUI){
+		m_httpClient.ToggleMute();
+		UpdateStatusEditBox();
+	}
+}

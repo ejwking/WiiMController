@@ -106,15 +106,15 @@ int CWiimHttpClient::HttpRequest(std::string &url)
 		CurlWiimConfig(curl_handle);
 		// specify URL to get 
 		curl_easy_setopt(curl_handle, CURLOPT_URL, url.c_str());
-		/* send all data to this function  */
+		// send all data to this function
 		curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, CurlMemoryCallback);
-		/* we pass our m_data struct to the callback function */
+		// we pass our m_data struct to the callback function
 		curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void*)&m_data);
-		/* some servers do not like requests that are made without a user-agent	field, so we provide one */
+		// some servers do not like requests that are made without a user-agent	field, so we provide one
 		curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
-		/* get it! */
+		// get it!
 		result = curl_easy_perform(curl_handle);
-		/* check for errors */
+		// check for errors
 		if(result != CURLE_OK){
 			std::string err = "curl_easy_perform() failed: \n\n";
 			err += curl_easy_strerror(result);
@@ -125,7 +125,7 @@ int CWiimHttpClient::HttpRequest(std::string &url)
 			TRACE("\n\n%d bytes retrieved\n%s\n\n", m_data.response_size, m_data.memory);
 			Ok = 1;
 		}
-		/* cleanup curl stuff */
+		// cleanup curl stuff
 		curl_easy_cleanup(curl_handle);
 	}
 	return Ok;
@@ -152,19 +152,22 @@ int CWiimHttpClient::CurlGlobalInit_Ok()
 	return m_CurlGlobalInit;
 }
 
-int CWiimHttpClient::SetPlayerCmd(const std::string& cmd, const std::string& arg_1, const std::string& arg_2)
+int CWiimHttpClient::SendCommand(const std::string& command, const std::string& arg_1, const std::string& arg_2)
 {
+	// example - setPlayerCmd:play:url
+	//           command:arg_1:arg_2
 	if(CurlGlobalInit_Ok()){
-		std::string Url = "https://" + m_Wiim.IP + "/httpapi.asp?command=setPlayerCmd:" + cmd;
-		if(arg_1 != "")
-			Url += ":" + arg_1;
-		if(arg_2 != "")
-			Url += ":" + arg_2;
+		std::string Url = "https://" + m_Wiim.IP + "/httpapi.asp?command=" + command;
+		if(arg_1 != "") Url += ":" + arg_1;
+		if(arg_2 != "") Url += ":" + arg_2;
 		if(HttpRequest(Url)){
 			// copy the response into m_LastResponse because m_data.memory will be overwritten by the next request for the status update.
 			if(sizeof(m_LastResponse) > m_data.response_size){
 				memcpy_s(m_LastResponse, sizeof(m_LastResponse), m_data.memory, m_data.response_size);
-				if(GetPlayerStatus())	// update our status info after sending any command, so we can reflect any info changes in the UI.
+
+				// this is not a good idea because it makes the UI slow.
+				// can we send 2 commands for each curl_easy_init()? would that be quicker? otherwise just dont do this here.
+			//	if(GetPlayerStatus())	// update our status info after sending any command, so we can reflect any info changes in the UI.
 					return 1;
 			}
 			else
@@ -181,23 +184,16 @@ int CWiimHttpClient::SetBaseUrl(char *pUrl)
 	return 1;
 }
 
-/*int CWiimHttpClient::TogglePlay()
-{
-	if(m_Wiim.PlayerStatus == 1) return SetPlayerCmd("pause");
-	else return SetPlayerCmd("play");
-}*/
-
 int CWiimHttpClient::GetPlayerStatus(int extended)
 {
-	// getPlayerStatus example string (Use getPlayerStatusEx for a lot more info) :
-	// {\"type\":\"0\",\"ch\":\"0\",\"mode\":\"31\",\"loop\":\"3\",\"eq\":\"0\",\"vendor\":\"spotify:search:Run+Up+%28feat.+PARTYNEXTDOOR+%26+Nicki+Minaj%29+Major+Lazer\",\"status\":\"play\",\"curpos\":\"118816\",\"offset_pts\":\"0\",\"totlen\":\"201254\",\"Title\":\"427920596F75722053696465\",\"Artist\":\"4A6F6E617320426C7565\",\"Album\":\"426C7565\",\"alarmflag\":\"0\",\"plicount\":\"0\",\"plicurr\":\"0\",\"vol\":\"65\",\"mute\":\"0\"}
-	std::string Url;
-	if(extended) Url = "https://" + m_Wiim.IP + "/httpapi.asp?command=getStatusEx";
-	else         Url = "https://" + m_Wiim.IP + "/httpapi.asp?command=getPlayerStatus";
-	if(HttpRequest(Url)){
-		if(ParseJsonString()){
+	if(extended){
+		// "getStatusEx" use this instead, which returns masses more info.
+	}
+	else if(SendCommand("getPlayerStatus")){
+		// getPlayerStatus example string:
+		// {\"type\":\"0\",\"ch\":\"0\",\"mode\":\"31\",\"loop\":\"3\",\"eq\":\"0\",\"vendor\":\"spotify:search:Run+Up+%28feat.+PARTYNEXTDOOR+%26+Nicki+Minaj%29+Major+Lazer\",\"status\":\"play\",\"curpos\":\"118816\",\"offset_pts\":\"0\",\"totlen\":\"201254\",\"Title\":\"427920596F75722053696465\",\"Artist\":\"4A6F6E617320426C7565\",\"Album\":\"426C7565\",\"alarmflag\":\"0\",\"plicount\":\"0\",\"plicurr\":\"0\",\"vol\":\"65\",\"mute\":\"0\"}
+		if(ParseJsonString_PlayerStatus()){
 			m_Wiim.Initialised = 1;
-			UpdatePlayerStatusString();
 			return 1;
 		}
 	}
@@ -205,68 +201,92 @@ int CWiimHttpClient::GetPlayerStatus(int extended)
 	return 0;
 }
 
-int CWiimHttpClient::UpdatePlayerStatusString()
+int CWiimHttpClient::PlayUrl(const std::string& url)
 {
-	m_LastStatus.Empty();
-	if(m_Wiim.Initialised){
-		std::string title = (m_Wiim.vendor == "CustomPushUrl") ? "Custom URL" : m_Wiim.Title;
-		m_LastStatus.Format(_T("Title: %s\r\nArtist: %s\r\nAlbum: %s\r\nPosition: %s / %s\r\nStatus: %s\r\nPlaylist: %d / %d\r\nVolume: %d\r\nMute: %d"),
-			Utf8(title),
-			Utf8(m_Wiim.Artist),
-			Utf8(m_Wiim.Album),
-			Utf8(m_Wiim.curpos_fmt),
-			Utf8(m_Wiim.totlen_fmt),
-			Utf8(m_Wiim.status),
-			m_Wiim.plicurr, m_Wiim.plicount,
-			m_Wiim.vol, m_Wiim.mute
-		);
+	if(SendCommand("setPlayerCmd", "play", url)){
+		m_Wiim.Title = url;
 		return 1;
 	}
 	return 0;
 }
 
-int CWiimHttpClient::PlayUrl(const std::string& url)
+int CWiimHttpClient::GetEqStatus(int &EqualiserOn, CString &CurrentEqName)
 {
-	return SetPlayerCmd("play", url);
+	// example response for EQGetBand:
+	// {"status":"OK","EQLevel":1,"source_name":"wifi","EQStat":"Off","Name":"bass up treble down","pluginURI":"http://moddevices.com/plugins/caps/Eq10HP","channelMode":"Stereo","EQBand":[{"index":0,"param_name":"band31hz","value":100},{"index":1,"param_name":"band63hz","value":100},{"index":2,"param_name":"band125hz","value":80},{"index":3,"param_name":"band250hz","value":55},{"index":4,"param_name":"band500hz","value":50},{"index":5,"param_name":"band1khz","value":50},{"index":6,"param_name":"band2khz","value":50},{"index":7,"param_name":"band4khz","value":56},{"index":8,"param_name":"band8khz","value":71},{"index":9,"param_name":"band16khz","value":86}]}
+	int Ok = 0;
+	if(SendCommand("EQGetBand")){
+		if(ParseJsonString_EqBand()){
+			if(m_Eq.EQStat.compare("On") == 0)
+				m_EqualiserOn = 1;
+			else if(m_Eq.EQStat.compare("Off") == 0)
+				m_EqualiserOn = 0;
+			else
+				m_EqualiserOn = -1; // Unknown state
+			Ok = 1;
+			EqualiserOn = m_EqualiserOn;
+			CurrentEqName = Utf8(m_Eq.Name);
+		}
+	}
+	return Ok;
+}
+
+int CWiimHttpClient::EQLoad(char *pName)
+{
+	return SendCommand("EQLoad", pName);
 }
 
 char *CWiimHttpClient::GetEQList()
 {
-
-	// EQLoad:XXXX   works in browser !!! 
-	why not here.
-	// then everything else / EQGetList etc works.
-	// but why
-
-	SetPlayerCmd("EQLoad", "Classical");
-
-	// EQGetList does not work !
-	// nor does EQGetStat.
-	
-	SetPlayerCmd("EQGetBand"); // command not in pdf, see wiim forum
-	// EQGetBand / EQSetBand
-	
-//	if(SetPlayerCmd("EQLoad", "Flat")){
-//	if(SetPlayerCmd("EQGetStat")){
-	if(SetPlayerCmd("EQGetList")){
+	// SendCommand("EQLoad", "Classical");
+	// EQGetBand / EQSetBand, command not in pdf, see wiim forum
+	if(SendCommand("EQGetList")){
 		// Example Response:
-		// ["Flat", "Acoustic", "Bass Booster", "Bass Reducer", "Classical", "Dance", "Deep", "Electronic", "Hip-Hop", "Jazz", "Latin", "Loudness", "Lounge", "Piano", "Pop", "R&B", "Rock", "Small Speakers", "Spoken Word", "Treble Booster", "Treble Reducer", "Vocal Booster"]
+		// [ "Flat", "Acoustic", "Bass Booster", "Bass Reducer", "Classical", "Dance", "Deep", "Electronic", "Game", "Hip-Hop", "Jazz", "Latin", "Loudness", "Lounge", "Movie", "Piano", "Pop", "R&B", "Rock", "Small Speakers", "Spoken Word", "Treble Booster", "Treble Reducer", "Vocal Booster", "bass up treble down", "low frequencys up", "middle down", "middle down 2" ]
 		return m_LastResponse;
 	}
 	return NULL;
 }
 
+int CWiimHttpClient::TogglePlay()
+{
+	// 2.3.6 Toggle pause/play
+	// Params: setPlayerCmd:onepause
+	// If the state is paused, resume it; otherwise, pause it.
+	return SendCommand("setPlayerCmd", "onepause");
+
+	// play / pause / stop / resume
+	// ...
+/*	if(m_Wiim.status.compare("play") == 0)
+		return SendCommand("setPlayerCmd", "pause");
+	return SendCommand("setPlayerCmd", "play"); */
+}
+
 int CWiimHttpClient::ToggleMute()
 {
 	m_Wiim.mute = !m_Wiim.mute;
-	return SetPlayerCmd("mute", m_Wiim.mute?"1":"0");
+	return SendCommand("setPlayerCmd", "mute", m_Wiim.mute?"1":"0");
+}
+
+int CWiimHttpClient::VolumeStep(int step)
+{
+	// 2.3.11 Set volume
+	// Params: setPlayerCmd:vol:value
+	// https://10.10.10.254/httpapi.asp?command=setPlayerCmd:vol:value
+	// Value can be 0 to 100.
+	m_Wiim.vol += step;
+	m_Wiim.vol = min(m_Wiim.vol, 100);
+	m_Wiim.vol = max(m_Wiim.vol,   0);
+	SendCommand("setPlayerCmd", "vol", std::to_string(m_Wiim.vol));
+	m_Wiim.mute = 0;
+	return 0;
 }
 
 int CWiimHttpClient::ToggleEqualiserOnOff()
 {
-	m_Wiim.EqualiserOn = !m_Wiim.EqualiserOn;
-	SetPlayerCmd(m_Wiim.EqualiserOn?"EQOn":"EQOff");
-	return m_Wiim.EqualiserOn;
+	m_EqualiserOn = !m_EqualiserOn;
+	SendCommand(m_EqualiserOn ? "EQOn" : "EQOff");
+	return m_EqualiserOn;
 }
 
 std::string CWiimHttpClient::ExtractArtworkUrl(const std::string& vendor)
@@ -323,14 +343,14 @@ std::string CWiimHttpClient::UrlDecode(const std::string& src)
 	return out;
 }
 
-int CWiimHttpClient::ParseJsonString()
+int CWiimHttpClient::ParseJsonString_PlayerStatus()
 {
 	json j;
 	try {
 		j = json::parse(m_data.memory);
 	}
 	catch (...) {
-		AfxMessageBox(_T("Failed to parse JSON response. The response may be malformed or the device may not be responding correctly."));
+		AfxMessageBox(_T("PlayerStatus. Failed to parse JSON response. The response may be malformed or the device may not be responding correctly."));
 		return 0;
 	}
 	// Integer fields
@@ -362,17 +382,23 @@ int CWiimHttpClient::ParseJsonString()
 	return 1;
 }
 
-/*	// Hex → ASCII
-	auto HexToAscii = [](const std::string& hex) {
-		std::string out;
-		for (size_t i = 0; i < hex.length(); i += 2) {
-			char chr = (char) strtol(hex.substr(i, 2).c_str(), nullptr, 16);
-			out.push_back(chr);
-		}
-		return out;
-		};
+int CWiimHttpClient::ParseJsonString_EqBand()
+{
+	json j;
+	try {
+		j = json::parse(m_data.memory);
+	}
+	catch (...) {
+		AfxMessageBox(_T("EqBand. Failed to parse JSON response. The response may be malformed or the device may not be responding correctly."));
+		return 0;
+	}
+	m_Eq.status      = j.value("status", "");
+	m_Eq.source_name = j.value("source_name", "");
+	m_Eq.EQStat      = j.value("EQStat", "");
+	m_Eq.Name        = j.value("Name", "");
+	m_Eq.pluginURI   = j.value("pluginURI", "");
+	m_Eq.channelMode = j.value("channelMode", "");
 
-	m_Wiim.Title  = HexToAscii(j.value("Title", ""));
-	m_Wiim.Artist = HexToAscii(j.value("Artist", ""));
-	m_Wiim.Album  = HexToAscii(j.value("Album", ""));
-	*/
+	m_Eq.EQLevel = j.value("EQLevel", 0);
+	return 1;
+}
