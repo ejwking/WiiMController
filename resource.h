@@ -4,7 +4,6 @@
 //
 #define IDD_WIIMCONTROLLER_DIALOG       102
 #define IDR_MAINFRAME                   128
-#define IDC_BTN_TEST                    1000
 #define IDC_LIST_STREAMURL              1011
 #define IDC_LIST_EQ                     1013
 #define IDC_EDIT_STREAMSFILE            1015
@@ -15,8 +14,9 @@
 #define IDC_BTN_REFRESH_STATS           1021
 #define IDC_BTN_MUTE                    1023
 #define IDC_BTN_VOL_UP                  1024
-#define IDC_BTN_VOL_UP2                 1025
 #define IDC_BTN_VOL_DOWN                1025
+#define IDC_BTN_MUTE2                   1026
+#define IDC_BTN_TOGGLE_PLAY             1026
 
 // Next default values for new objects
 // 

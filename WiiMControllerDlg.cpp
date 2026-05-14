@@ -73,7 +73,6 @@ BEGIN_MESSAGE_MAP(CWiiMControllerDlg, CDialog)
 	ON_NOTIFY(LVN_ITEMCHANGED,IDC_LIST_STREAMURL,&CWiiMControllerDlg::OnLvnItemchangedListStreamurl)
 	ON_NOTIFY(LVN_ITEMCHANGED,IDC_LIST_EQ,&CWiiMControllerDlg::OnLvnItemchangedListEq)
 
-	ON_BN_CLICKED(IDC_BTN_TEST,&CWiiMControllerDlg::OnBnClickedBtnTest)
 	ON_BN_CLICKED(IDC_BTN_LOAD_FILE,&CWiiMControllerDlg::OnBnClickedBtnLoadFile)
 	ON_BN_CLICKED(IDC_BTN_BROWSE,&CWiiMControllerDlg::OnBnClickedBtnBrowse)
 	ON_BN_CLICKED(IDC_BTN_TOGGLE_EQ,&CWiiMControllerDlg::OnBnClickedBtnToggleEq)
@@ -81,6 +80,7 @@ BEGIN_MESSAGE_MAP(CWiiMControllerDlg, CDialog)
 	ON_BN_CLICKED(IDC_BTN_VOL_UP,&CWiiMControllerDlg::OnBnClickedBtnVolUp)
 	ON_BN_CLICKED(IDC_BTN_VOL_DOWN,&CWiiMControllerDlg::OnBnClickedBtnVolDown)
 	ON_BN_CLICKED(IDC_BTN_MUTE,&CWiiMControllerDlg::OnBnClickedBtnMute)
+	ON_BN_CLICKED(IDC_BTN_TOGGLE_PLAY,&CWiiMControllerDlg::OnBnClickedBtnTogglePlay)
 END_MESSAGE_MAP()
 
 
@@ -103,8 +103,9 @@ BOOL CWiiMControllerDlg::OnInitDialog()
 
 	// stream url list initialisation
 	m_ListStream.SetExtendedStyle(LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
-	m_ListStream.InsertColumn(0, _T("Stream Name"), LVCFMT_LEFT, 150);	// add 2 columns, 1) stream name, 2) stream URL
-	m_ListStream.InsertColumn(1, _T("Stream URL"), LVCFMT_LEFT, 1000);
+	m_ListStream.InsertColumn(0, _T("Category"), LVCFMT_LEFT, 80);
+	m_ListStream.InsertColumn(1, _T("Name"), LVCFMT_LEFT, 120);
+	m_ListStream.InsertColumn(2, _T("URL"), LVCFMT_LEFT, 1000);
 	LoadStreamUrlList();
 
 	// equaliser presets list initialisation
@@ -158,7 +159,7 @@ void CWiiMControllerDlg::GetInfoFromDevice()
 		/* the text in m_Wiim.Title is slightly converted/adjusted from the original Title string sent to the device, the % symbol has been converted to =, I am not sure why 
 		   but it means this comparison doesnt work properly, so I cant highlight the currently playing stream when the app starts up. ToDo investigate and fix.
 		for(int i=0; i<m_NumStream; i++){
-			if(m_ListStreamData[i].url.Compare(Utf8(m_httpClient.m_Wiim.Title)) == 0){
+			if(m_StreamInfo[i].url.Compare(Utf8(m_httpClient.m_Wiim.Title)) == 0){
 				m_ListStream.SetItemState(i, LVIS_SELECTED, LVIS_SELECTED);
 				m_ListStream.EnsureVisible(i, FALSE);
 				break;
@@ -238,11 +239,15 @@ bool CWiiMControllerDlg::LoadStreamUrlsFromFile(const CString& filePath)
 		return false;
 
 	m_ListStream.DeleteAllItems(); // Clear existing items before loading new ones
-	CString line;
+	CString line, last_category = _T("");
 	m_NumStream = 0;
 	while (file.ReadString(line)){
 		if(!line.IsEmpty()){	// skip empty lines
-			if(line[0] != '#'){	// skip lines starting with # (comments)
+			if(line[0] == '#')
+			{
+				last_category = line.Mid(1).Trim(); // store the category name without the '#' character
+			}
+			else{
 				if(m_NumStream < LIST_MAX){
 					CString name = line;
 					// Read URL line
@@ -256,8 +261,9 @@ bool CWiiMControllerDlg::LoadStreamUrlsFromFile(const CString& filePath)
 					// also test theres not an empty line between name and url.
 
 					// Store in your struct array
-					m_ListStreamData[m_NumStream].name = name;
-					m_ListStreamData[m_NumStream].url  = url;
+					m_StreamInfo[m_NumStream].category = last_category;
+					m_StreamInfo[m_NumStream].name = name;
+					m_StreamInfo[m_NumStream].url  = url;
 					m_NumStream++;
 				}
 				else{
@@ -271,15 +277,6 @@ bool CWiiMControllerDlg::LoadStreamUrlsFromFile(const CString& filePath)
 	return true;
 }
 
-void CWiiMControllerDlg::OnBnClickedBtnTest()
-{
-//	m_httpClient.ToggleMute();
-	// TODO: Add your control notification handler code here
-
-//	m_httpClient.GetEQList();
-//	GetDlgItem(IDC_EDIT_STATUS)->SetWindowText(m_httpClient.m_LastStatus);
-}
-
 void CWiiMControllerDlg::OnLvnItemchangedListStreamurl(NMHDR *pNMHDR, LRESULT *pResult)
 {
 	LPNMLISTVIEW pNMLV = reinterpret_cast<LPNMLISTVIEW>(pNMHDR);
@@ -287,7 +284,7 @@ void CWiiMControllerDlg::OnLvnItemchangedListStreamurl(NMHDR *pNMHDR, LRESULT *p
 	*pResult = 0;
 	if(m_DeviceAvailable && m_InitUI){
 		TRACE("\n\nOnLvnItemchangedListStreamurl %d", pNMLV->iItem); // index of the changed item
-		std::string url = CT2A(m_ListStreamData[pNMLV->iItem].url);
+		std::string url = CT2A(m_StreamInfo[pNMLV->iItem].url);
 		m_httpClient.PlayUrl(url);
 		UpdateStatusEditBox();
 	}
@@ -300,11 +297,13 @@ void CWiiMControllerDlg::OnLvnItemchangedListEq(NMHDR *pNMHDR,LRESULT *pResult)
 	*pResult = 0;
 	if(m_DeviceAvailable && m_InitUI){
 		char Name[256] = {0};
-		strcpy_s(Name, sizeof(Name), CT2A(m_EQname[pNMLV->iItem]));
+		strcpy_s(Name, sizeof(Name)-1, CT2A(m_EQname[pNMLV->iItem]));
+		// replace ' ' with '+' in the equaliser profile name, as this is what the device expects for some reason, even though the presets list sent by the device 
+		// have spaces in their names, when sending a command to change to one of those presets it expects the spaces to be replaced with + symbols.
+		for(int i=0; Name[i]; i++)
+			if(Name[i] == ' ')
+				Name[i] = '+';
 		m_httpClient.EQLoad(Name);
-
-		this isnt working. wonder if its the spaces in "bass up treble down" that are causing problems,
-			the default presets seems to work.
 	}
 }
 
@@ -313,8 +312,9 @@ void CWiiMControllerDlg::LoadStreamUrlList()
 	if(PathFileExists(m_StreamsFilepath))
 		if(LoadStreamUrlsFromFile(m_StreamsFilepath))
 			for(int i=0; i<m_NumStream; i++){
-				int item = m_ListStream.InsertItem(i, m_ListStreamData[i].name);
-				m_ListStream.SetItemText(item, 1, m_ListStreamData[i].url);
+				int item = m_ListStream.InsertItem(i, m_StreamInfo[i].category);
+				m_ListStream.SetItemText(item, 1, m_StreamInfo[i].name);
+				m_ListStream.SetItemText(item, 2, m_StreamInfo[i].url);
 			}
 }
 
@@ -328,9 +328,12 @@ void CWiiMControllerDlg::UpdatePlayerStatusString()
 {
 	m_LastStatus.Empty();
 	if(m_httpClient.m_Wiim.Initialised){
-		//	std::string title = (m_httpClient.m_Wiim.vendor == "CustomPushUrl") ? "Custom URL" : m_httpClient.m_Wiim.Title;
+		
+	//	std::string title = (m_httpClient.m_Wiim.vendor == "CustomPushUrl") ? "Custom URL" : m_httpClient.m_Wiim.Title;
 		std::string title = m_httpClient.m_Wiim.Title;
-		m_LastStatus.Format(_T("Title: %s\r\nArtist: %s\r\nAlbum: %s\r\nPosition: %s / %s\r\nStatus: %s\r\nPlaylist: %d / %d\r\nVolume: %d\r\nMute: %d"),
+
+		m_LastStatus.Format(_T("Vendor: %s\r\nTitle: %s\r\nArtist: %s\r\nAlbum: %s\r\nPosition: %s / %s\r\nStatus: %s\r\nPlaylist: %d / %d\r\nVolume: %d\r\nMute: %d"),
+			Utf8(m_httpClient.m_Wiim.vendor),
 			Utf8(title),
 			Utf8(m_httpClient.m_Wiim.Artist),
 			Utf8(m_httpClient.m_Wiim.Album),
@@ -378,6 +381,14 @@ void CWiiMControllerDlg::OnBnClickedBtnMute()
 {
 	if(m_DeviceAvailable && m_InitUI){
 		m_httpClient.ToggleMute();
+		UpdateStatusEditBox();
+	}
+}
+
+void CWiiMControllerDlg::OnBnClickedBtnTogglePlay()
+{
+	if(m_DeviceAvailable && m_InitUI){
+		m_httpClient.TogglePlay();
 		UpdateStatusEditBox();
 	}
 }

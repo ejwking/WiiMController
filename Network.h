@@ -89,7 +89,8 @@ public:
 
 	WIIM_STATUS m_Wiim;
 
-	int GetPlayerStatus(int extended=0);
+	int GetStatusEx();
+	int GetPlayerStatus();
 	int SetBaseUrl(char *pUrl);
 	char *GetEQList();
 	int TogglePlay();
@@ -101,8 +102,6 @@ public:
 	int ToggleEqualiserOnOff();
 
 private:
-	char m_LastResponse[2000];
-	
 	MEMORYSTRUCT m_data;
 	WIIM_EQUALISER m_Eq;
 
@@ -114,7 +113,7 @@ private:
 	int HttpRequest(std::string &url);
 	void CurlWiimConfig(CURL *curl_handle);
 	int CurlGlobalInit_Ok();
-	int SendCommand(const std::string& command, const std::string& arg_1="", const std::string& arg_2="");
+	int SendCommand(const std::string& command, const std::string& arg_1="", const std::string& arg_2="", const std::string& arg_3="");
 
 	std::string ExtractArtworkUrl(const std::string& vendor);
 	std::string FormatTimeMs(const std::string& msStr);

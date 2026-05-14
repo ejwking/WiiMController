@@ -152,7 +152,7 @@ int CWiimHttpClient::CurlGlobalInit_Ok()
 	return m_CurlGlobalInit;
 }
 
-int CWiimHttpClient::SendCommand(const std::string& command, const std::string& arg_1, const std::string& arg_2)
+int CWiimHttpClient::SendCommand(const std::string& command, const std::string& arg_1, const std::string& arg_2, const std::string& arg_3)
 {
 	// example - setPlayerCmd:play:url
 	//           command:arg_1:arg_2
@@ -160,19 +160,9 @@ int CWiimHttpClient::SendCommand(const std::string& command, const std::string& 
 		std::string Url = "https://" + m_Wiim.IP + "/httpapi.asp?command=" + command;
 		if(arg_1 != "") Url += ":" + arg_1;
 		if(arg_2 != "") Url += ":" + arg_2;
-		if(HttpRequest(Url)){
-			// copy the response into m_LastResponse because m_data.memory will be overwritten by the next request for the status update.
-			if(sizeof(m_LastResponse) > m_data.response_size){
-				memcpy_s(m_LastResponse, sizeof(m_LastResponse), m_data.memory, m_data.response_size);
-
-				// this is not a good idea because it makes the UI slow.
-				// can we send 2 commands for each curl_easy_init()? would that be quicker? otherwise just dont do this here.
-			//	if(GetPlayerStatus())	// update our status info after sending any command, so we can reflect any info changes in the UI.
-					return 1;
-			}
-			else
-				AfxMessageBox(_T("m_LastResponse buffer to small - todo, allocate this correctly"));
-		}
+		if(arg_3 != "") Url += ":" + arg_3;
+		if(HttpRequest(Url))
+			return 1;
 	}
 	return 0;
 }
@@ -184,14 +174,31 @@ int CWiimHttpClient::SetBaseUrl(char *pUrl)
 	return 1;
 }
 
-int CWiimHttpClient::GetPlayerStatus(int extended)
+int CWiimHttpClient::GetStatusEx()
 {
-	if(extended){
-		// "getStatusEx" use this instead, which returns masses more info.
+	// getStatusEx this retrieves masses of info.
+	if(SendCommand("getStatusEx")){
+		// partial example response string:
+		// { "language": "en_us", "ssid": "WiiM Pro-932C", "hideSSID": "0", "firmware": "Linkplay.4.8.814756", "build": "release", "project": "WiiM_Pro_with_gc4a", "priv_prj": "WiiM_Pro_with_gc4a", "project_build_name": "WiiM_Pro_with_gc4a", "Release": "20260423", 
+		// "FW_Release_version": "", "PCB_version": "1", "cast_enable": 1, "cast_usage_report": 0, "group": "0", "wmrm_version": "4.3", "wmrm_sub_ver": "7", "wmrm_capability": 63, "expired": "0", "internet": "1", "uuid": 
+
+	//	if(ParseJsonString_StatusEx())
+	//		return 1;
 	}
-	else if(SendCommand("getPlayerStatus")){
+	return 0;
+}
+
+int CWiimHttpClient::GetPlayerStatus()
+{
+/*	if(m_data.memory != NULL)
+		SendCommand("getMetaInfo");
+	// example response - { "metaData": { "album": "unknow", "title": "https://streaming05.liveboxstream.uk/proxy/selectr1/stream", "subtitle": "unknow", "artist": "unknow", "albumArtURI": "unknow", "sampleRate": "44100", "bitDepth": "32", "bitRate": "127", "trackId": "0" } } */
+
+	if(SendCommand("getPlayerStatus")){
 		// getPlayerStatus example string:
-		// {\"type\":\"0\",\"ch\":\"0\",\"mode\":\"31\",\"loop\":\"3\",\"eq\":\"0\",\"vendor\":\"spotify:search:Run+Up+%28feat.+PARTYNEXTDOOR+%26+Nicki+Minaj%29+Major+Lazer\",\"status\":\"play\",\"curpos\":\"118816\",\"offset_pts\":\"0\",\"totlen\":\"201254\",\"Title\":\"427920596F75722053696465\",\"Artist\":\"4A6F6E617320426C7565\",\"Album\":\"426C7565\",\"alarmflag\":\"0\",\"plicount\":\"0\",\"plicurr\":\"0\",\"vol\":\"65\",\"mute\":\"0\"}
+		// {\"type\":\"0\",\"ch\":\"0\",\"mode\":\"31\",\"loop\":\"3\",\"eq\":\"0\",\"vendor\":\"spotify:search:Run+Up+%28feat.+PARTYNEXTDOOR+%26+Nicki+Minaj%29+Major+Lazer\",\"status\":\"play\",
+		// \"curpos\":\"118816\",\"offset_pts\":\"0\",\"totlen\":\"201254\",\"Title\":\"427920596F75722053696465\",\"Artist\":\"4A6F6E617320426C7565\",\"Album\":\"426C7565\",\"alarmflag\":\"0\",
+		// \"plicount\":\"0\",\"plicurr\":\"0\",\"vol\":\"65\",\"mute\":\"0\"}
 		if(ParseJsonString_PlayerStatus()){
 			m_Wiim.Initialised = 1;
 			return 1;
@@ -201,8 +208,11 @@ int CWiimHttpClient::GetPlayerStatus(int extended)
 	return 0;
 }
 
+//
+
 int CWiimHttpClient::PlayUrl(const std::string& url)
 {
+//	if(SendCommand("setPlayerCmd", "playlist", url, "0")){	this command can be used instead of below.
 	if(SendCommand("setPlayerCmd", "play", url)){
 		m_Wiim.Title = url;
 		return 1;
@@ -217,12 +227,9 @@ int CWiimHttpClient::GetEqStatus(int &EqualiserOn, CString &CurrentEqName)
 	int Ok = 0;
 	if(SendCommand("EQGetBand")){
 		if(ParseJsonString_EqBand()){
-			if(m_Eq.EQStat.compare("On") == 0)
-				m_EqualiserOn = 1;
-			else if(m_Eq.EQStat.compare("Off") == 0)
-				m_EqualiserOn = 0;
-			else
-				m_EqualiserOn = -1; // Unknown state
+			m_EqualiserOn = -1; // Unknown state
+				 if(m_Eq.EQStat.compare("On")  == 0) m_EqualiserOn = 1;
+			else if(m_Eq.EQStat.compare("Off") == 0) m_EqualiserOn = 0;
 			Ok = 1;
 			EqualiserOn = m_EqualiserOn;
 			CurrentEqName = Utf8(m_Eq.Name);
@@ -233,17 +240,17 @@ int CWiimHttpClient::GetEqStatus(int &EqualiserOn, CString &CurrentEqName)
 
 int CWiimHttpClient::EQLoad(char *pName)
 {
+	// SendCommand("EQLoad", "Classical");
 	return SendCommand("EQLoad", pName);
 }
 
 char *CWiimHttpClient::GetEQList()
 {
-	// SendCommand("EQLoad", "Classical");
 	// EQGetBand / EQSetBand, command not in pdf, see wiim forum
 	if(SendCommand("EQGetList")){
 		// Example Response:
 		// [ "Flat", "Acoustic", "Bass Booster", "Bass Reducer", "Classical", "Dance", "Deep", "Electronic", "Game", "Hip-Hop", "Jazz", "Latin", "Loudness", "Lounge", "Movie", "Piano", "Pop", "R&B", "Rock", "Small Speakers", "Spoken Word", "Treble Booster", "Treble Reducer", "Vocal Booster", "bass up treble down", "low frequencys up", "middle down", "middle down 2" ]
-		return m_LastResponse;
+		return m_data.memory;
 	}
 	return NULL;
 }
@@ -253,10 +260,12 @@ int CWiimHttpClient::TogglePlay()
 	// 2.3.6 Toggle pause/play
 	// Params: setPlayerCmd:onepause
 	// If the state is paused, resume it; otherwise, pause it.
+	m_Wiim.status = (m_Wiim.status == "play") ? "pause" : "play";
 	return SendCommand("setPlayerCmd", "onepause");
 
+	// or maybe use this instead...
+	//
 	// play / pause / stop / resume
-	// ...
 /*	if(m_Wiim.status.compare("play") == 0)
 		return SendCommand("setPlayerCmd", "pause");
 	return SendCommand("setPlayerCmd", "play"); */
@@ -402,3 +411,17 @@ int CWiimHttpClient::ParseJsonString_EqBand()
 	m_Eq.EQLevel = j.value("EQLevel", 0);
 	return 1;
 }
+
+/*
+
+hex to Utf8 conversion problem example :  
+
+"Title":"4461766964202844617272656E20456D6572736F6E2661706F733B7320556E6465727761746572204D697829","Artist":"4E6F7720506C6179696E673A2047757320477573",
+
+Title: David (Darren Emerson&apos;s Underwater Mix)
+Artist: Now Playing: Gus Gus
+Album: 
+
+... the title hasnt been converted correctly, the &apos; is still in there instead of the ' character, 
+
+*/
