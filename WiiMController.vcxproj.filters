@@ -69,6 +69,7 @@
     <None Include="res\WiiMController.rc2">
       <Filter>Resource Files</Filter>
     </None>
+    <None Include=".github\copilot-instructions.md" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="res\WiiMController.ico">

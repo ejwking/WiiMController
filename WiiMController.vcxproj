@@ -209,6 +209,7 @@
     <ResourceCompile Include="WiiMController.rc" />
   </ItemGroup>
   <ItemGroup>
+    <None Include=".github\copilot-instructions.md" />
     <None Include="res\WiiMController.rc2" />
   </ItemGroup>
   <ItemGroup>

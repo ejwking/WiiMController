@@ -25,31 +25,39 @@ which gives CLI command to set the environment variable permanently in the user 
 Device discovery
 WiiM uses SSDP (UPnP discovery).
 Good options:
-miniupnpc → simple, widely used
+miniupnpc, simple, widely used
 Write your own SSDP client (UDP multicast to 239.255.255.250:1900)
+
+You can send 'HTTPs Get' request to the device, most of the response is in the JSON format.
+Request format is https://x.x.x.x/httpapi.asp?command=********
+x.x.x.x is the IP address of the device, ******* is the actual command.
+
+Play,
+Pause,
+Stop,
+Next,
+Previous,
+Mute,
+VolumeUp,
+VolumeDown
 */
 
 struct WIIM_STATUS
 {
-	int Initialised = 0;
-
-	int type = 0;
-	int ch = 0;
-	int mode = 0;
-	int loop = 0;
-	int eq = 0;
-
+	// getStatusEx response fields
 	std::string Name, IP, Model, SerialNumber;
+
+	// getPlayerStatus response fields
 	std::string vendor, status, offset_pts;
 	std::string Title, Artist, Album, ArtUrl;
 	std::string curpos, curpos_fmt;
 	std::string totlen, totlen_fmt;
 
-	int alarmflag = 0;
-	int plicount = 0;
-	int plicurr = 0;
-	int vol = 0;
-	int mute = 0;
+	int type = 0, ch = 0, mode = 0, loop = 0, eq = 0;
+	int alarmflag = 0, plicount = 0, plicurr = 0, vol = 0, mute = 0;
+
+	// getMetaInfo response fields
+	std::string sampleRate, bitDepth, bitRate;
 };
 
 struct WIIM_EQUALISER
@@ -65,22 +73,6 @@ struct MEMORYSTRUCT
 	size_t response_size;
 };
 
-/*
-You can send 'HTTPs Get' request to the device, most of the response is in the JSON format.
-Request format is https://x.x.x.x/httpapi.asp?command=********
-x.x.x.x is the IP address of the device, ******* is the actual command.
-
-	Play,
-	Pause,
-	Stop,
-	Next,
-	Previous,
-	Mute,
-	VolumeUp,
-	VolumeDown
-*/
-
-
 class CWiimHttpClient
 {
 public:
@@ -90,6 +82,8 @@ public:
 	WIIM_STATUS m_Wiim;
 
 	int GetStatusEx();
+	int GetMetaInfo();
+	void ResetMetaInfo();
 	int GetPlayerStatus();
 	int SetBaseUrl(char *pUrl);
 	char *GetEQList();
@@ -110,6 +104,7 @@ private:
 
 	int ParseJsonString_PlayerStatus();
 	int ParseJsonString_EqBand();
+	int ParseJsonString_MetaInfo();
 	int HttpRequest(std::string &url);
 	void CurlWiimConfig(CURL *curl_handle);
 	int CurlGlobalInit_Ok();
@@ -117,6 +112,5 @@ private:
 
 	std::string ExtractArtworkUrl(const std::string& vendor);
 	std::string FormatTimeMs(const std::string& msStr);
-	std::string HexToUtf8(const std::string& hex);
 	std::string UrlDecode(const std::string& src);
 };

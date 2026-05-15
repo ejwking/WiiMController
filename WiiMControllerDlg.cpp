@@ -103,14 +103,29 @@ BOOL CWiiMControllerDlg::OnInitDialog()
 
 	// stream url list initialisation
 	m_ListStream.SetExtendedStyle(LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
-	m_ListStream.InsertColumn(0, _T("Category"), LVCFMT_LEFT, 80);
-	m_ListStream.InsertColumn(1, _T("Name"), LVCFMT_LEFT, 120);
-	m_ListStream.InsertColumn(2, _T("URL"), LVCFMT_LEFT, 1000);
+	m_ListStream.InsertColumn(0, _T("category"), LVCFMT_LEFT, 80);
+	m_ListStream.InsertColumn(1, _T("name"), LVCFMT_LEFT, 120);
+	m_ListStream.InsertColumn(2, _T("url"), LVCFMT_LEFT, 1000);
 	LoadStreamUrlList();
 
 	// equaliser presets list initialisation
 	m_ListEQ.SetExtendedStyle(LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
-	m_ListEQ.InsertColumn(0, _T("Equaliser presets"), LVCFMT_LEFT, 200);
+	m_ListEQ.InsertColumn(0, _T("equaliser presets"), LVCFMT_LEFT, 200);
+
+	// create bold font once
+	CFont* pDlgFont = GetFont();
+	if (pDlgFont) {
+		LOGFONT lf;
+		pDlgFont->GetLogFont(&lf);
+		lf.lfWeight = FW_BOLD;
+		m_HeaderFont.DeleteObject();
+		m_HeaderFont.CreateFontIndirect(&lf);
+	}
+	// apply to both list headers (if present)
+	if(CHeaderCtrl* ph1 = m_ListStream.GetHeaderCtrl())
+		ph1->SetFont(&m_HeaderFont);
+	if(CHeaderCtrl* ph2 = m_ListEQ.GetHeaderCtrl())
+		ph2->SetFont(&m_HeaderFont);
 
 	GetInfoFromDevice();
 
@@ -154,10 +169,11 @@ void CWiiMControllerDlg::GetInfoFromDevice()
 {
 	if(m_DeviceAvailable){
 		m_httpClient.GetPlayerStatus();
-		UpdateStatusEditBox();
+		m_httpClient.GetMetaInfo(); // this just kicked up curl error when i first opened app, investigate ..
 
+		UpdateStatusEditBox();
 		/* the text in m_Wiim.Title is slightly converted/adjusted from the original Title string sent to the device, the % symbol has been converted to =, I am not sure why 
-		   but it means this comparison doesnt work properly, so I cant highlight the currently playing stream when the app starts up. ToDo investigate and fix.
+			but it means this comparison doesnt work properly, so I cant highlight the currently playing stream when the app starts up. ToDo investigate and fix.
 		for(int i=0; i<m_NumStream; i++){
 			if(m_StreamInfo[i].url.Compare(Utf8(m_httpClient.m_Wiim.Title)) == 0){
 				m_ListStream.SetItemState(i, LVIS_SELECTED, LVIS_SELECTED);
@@ -166,15 +182,15 @@ void CWiiMControllerDlg::GetInfoFromDevice()
 			}
 		} */
 
-		// Next get the equaliser presets list, and the current equaliser status, so we can populate the equaliser presets list and highlight the currently selected preset.
+		// Get the equaliser presets list, and the current equaliser status, so we can populate the equaliser presets list and highlight the currently selected preset.
 		LoadEqualiserPresetsList(m_httpClient.GetEQList());
 		CString CurrentEqName;
 		int EqEnabled = -1;
 		m_httpClient.GetEqStatus(EqEnabled, CurrentEqName);
 		if(EqEnabled==1 || EqEnabled==0)
-			GetDlgItem(IDC_BTN_TOGGLE_EQ)->SetWindowText(EqEnabled ? _T("Equaliser is ON") : _T("Equaliser is OFF"));
+			GetDlgItem(IDC_BTN_TOGGLE_EQ)->SetWindowText(EqEnabled ? _T("equaliser is ON") : _T("equaliser is OFF"));
 		else
-			GetDlgItem(IDC_BTN_TOGGLE_EQ)->SetWindowText(_T("Equaliser is ???"));
+			GetDlgItem(IDC_BTN_TOGGLE_EQ)->SetWindowText(_T("equaliser is ???"));
 
 		for(int i=0; i<m_NumEQ; i++){
 			if(m_EQname[i].Compare(CurrentEqName) == 0){
@@ -183,7 +199,7 @@ void CWiiMControllerDlg::GetInfoFromDevice()
 				break;
 			}
 		}
-		m_InitUI = 1;
+		m_InitUI = 1; // this must come last because m_ListEQ.EnsureVisible above will trigger a OnLvnItemchangedListStreamurl event.
 	}
 }
 
@@ -191,6 +207,7 @@ void CWiiMControllerDlg::OnBnClickedBtnRefreshStats()
 {
 	if(m_DeviceAvailable && m_InitUI){
 		m_httpClient.GetPlayerStatus();
+		m_httpClient.GetMetaInfo();
 		UpdateStatusEditBox();
 	}
 }
@@ -199,7 +216,7 @@ void CWiiMControllerDlg::OnBnClickedBtnToggleEq()
 {
 	if(m_DeviceAvailable && m_InitUI){
 		int EqEnabled = m_httpClient.ToggleEqualiserOnOff();
-		GetDlgItem(IDC_BTN_TOGGLE_EQ)->SetWindowText(EqEnabled ? _T("Equaliser is ON") : _T("Equaliser is OFF"));
+		GetDlgItem(IDC_BTN_TOGGLE_EQ)->SetWindowText(EqEnabled ? _T("equaliser is ON") : _T("equaliser is OFF"));
 	}
 }
 
@@ -232,49 +249,53 @@ void CWiiMControllerDlg::LoadEqualiserPresetsList(char *str)
 	}
 }
 
-bool CWiiMControllerDlg::LoadStreamUrlsFromFile(const CString& filePath)
+int CWiiMControllerDlg::LoadStreamUrlsFromFile(const CString& filePath)
 {
 	CStdioFile file;
-	if (!file.Open(filePath, CFile::modeRead | CFile::typeText))
-		return false;
+	if(!file.Open(filePath, CFile::modeRead | CFile::typeText))
+		return 0;
 
 	m_ListStream.DeleteAllItems(); // Clear existing items before loading new ones
+	int Ok = 1;
 	CString line, last_category = _T("");
 	m_NumStream = 0;
-	while (file.ReadString(line)){
+	while(file.ReadString(line) && Ok){
+		line.Trim();			// Remove (leading/trailing) whitespace
 		if(!line.IsEmpty()){	// skip empty lines
-			if(line[0] == '#')
-			{
-				last_category = line.Mid(1).Trim(); // store the category name without the '#' character
+			if(line[0] == '#'){
+				// store the category name without the '#' character
+				last_category = line.Mid(1).Trim();
 			}
 			else{
+				// name and url
 				if(m_NumStream < LIST_MAX){
 					CString name = line;
 					// Read URL line
-					if (!file.ReadString(line))
-						break;  // malformed file
-					CString url = line;
-					name.Trim(); // Remove leading/trailing whitespace
-					url.Trim();
-
-					// to do, test that url looks like a URL, starts with http:// or https://.
-					// also test theres not an empty line between name and url.
-
-					// Store in your struct array
+					while(file.ReadString(line) && Ok){
+						line.Trim();			// Remove (leading/trailing) whitespace
+						if(!line.IsEmpty()){
+							if(line.Find(_T("http")) != 0){
+								AfxMessageBox(_T("Error reading streams .txt file.\r\n Malformed file - expected URL after name. Stopping loading further entries."));
+								Ok = 0;
+							}
+							else
+								break; // got the url line
+						}
+					}
 					m_StreamInfo[m_NumStream].category = last_category;
 					m_StreamInfo[m_NumStream].name = name;
-					m_StreamInfo[m_NumStream].url  = url;
+					m_StreamInfo[m_NumStream].url  = line;
 					m_NumStream++;
 				}
 				else{
-					AfxMessageBox(_T("Reached maximum list capacity. Some entries may not be loaded."));
-					break;
+					AfxMessageBox(_T("Error - Reached maximum list capacity. TO DO - MAKE THIS DYNAMIC"));
+					Ok = 0;
 				}
 			}
 		}
 	}
 	file.Close();
-	return true;
+	return Ok;
 }
 
 void CWiiMControllerDlg::OnLvnItemchangedListStreamurl(NMHDR *pNMHDR, LRESULT *pResult)
@@ -286,6 +307,7 @@ void CWiiMControllerDlg::OnLvnItemchangedListStreamurl(NMHDR *pNMHDR, LRESULT *p
 		TRACE("\n\nOnLvnItemchangedListStreamurl %d", pNMLV->iItem); // index of the changed item
 		std::string url = CT2A(m_StreamInfo[pNMLV->iItem].url);
 		m_httpClient.PlayUrl(url);
+		m_httpClient.ResetMetaInfo(); // reset meta info so that old info from previous stream doesnt briefly show until the new info is retrieved from the device.
 		UpdateStatusEditBox();
 	}
 }
@@ -327,22 +349,25 @@ void CWiiMControllerDlg::UpdateStatusEditBox()
 void CWiiMControllerDlg::UpdatePlayerStatusString()
 {
 	m_LastStatus.Empty();
-	if(m_httpClient.m_Wiim.Initialised){
-		
-	//	std::string title = (m_httpClient.m_Wiim.vendor == "CustomPushUrl") ? "Custom URL" : m_httpClient.m_Wiim.Title;
-		std::string title = m_httpClient.m_Wiim.Title;
+//	std::string title = (m_httpClient.m_Wiim.vendor == "CustomPushUrl") ? "Custom URL" : m_httpClient.m_Wiim.Title;
+	std::string title = m_httpClient.m_Wiim.Title;
 
-		m_LastStatus.Format(_T("Vendor: %s\r\nTitle: %s\r\nArtist: %s\r\nAlbum: %s\r\nPosition: %s / %s\r\nStatus: %s\r\nPlaylist: %d / %d\r\nVolume: %d\r\nMute: %d"),
-			Utf8(m_httpClient.m_Wiim.vendor),
-			Utf8(title),
-			Utf8(m_httpClient.m_Wiim.Artist),
-			Utf8(m_httpClient.m_Wiim.Album),
-			Utf8(m_httpClient.m_Wiim.curpos_fmt),
-			Utf8(m_httpClient.m_Wiim.totlen_fmt),
-			Utf8(m_httpClient.m_Wiim.status),
-			m_httpClient.m_Wiim.plicurr, m_httpClient.m_Wiim.plicount,
-			m_httpClient.m_Wiim.vol, m_httpClient.m_Wiim.mute
-		);
+	m_LastStatus.Format(_T("Vendor: %s\r\nTitle: %s\r\nArtist: %s\r\nAlbum: %s\r\nPosition: %s / %s\r\nStatus: %s\r\nPlaylist: %d / %d\r\nVolume: %d\r\nMute: %d"),
+		Utf8(m_httpClient.m_Wiim.vendor),
+		Utf8(title),
+		Utf8(m_httpClient.m_Wiim.Artist),
+		Utf8(m_httpClient.m_Wiim.Album),
+		Utf8(m_httpClient.m_Wiim.curpos_fmt),
+		Utf8(m_httpClient.m_Wiim.totlen_fmt),
+		Utf8(m_httpClient.m_Wiim.status),
+		m_httpClient.m_Wiim.plicurr, m_httpClient.m_Wiim.plicount,
+		m_httpClient.m_Wiim.vol, m_httpClient.m_Wiim.mute
+	);
+
+	if(m_httpClient.m_Wiim.sampleRate!="" && m_httpClient.m_Wiim.bitDepth!="" && m_httpClient.m_Wiim.bitRate!=""){
+		CString MetaInfoStr;
+		MetaInfoStr.Format(_T("\r\nSample Rate: %sHz, Bit Depth: %sbit, Bit Rate: %skb/s"), Utf8(m_httpClient.m_Wiim.sampleRate), Utf8(m_httpClient.m_Wiim.bitDepth), Utf8(m_httpClient.m_Wiim.bitRate));
+		m_LastStatus += MetaInfoStr;
 	}
 }
 

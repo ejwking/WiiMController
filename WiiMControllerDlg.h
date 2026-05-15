@@ -24,6 +24,7 @@ public:
 	int m_DeviceAvailable, m_InitUI;
 	CWiimHttpClient m_httpClient;
 	CListCtrl m_ListStream, m_ListEQ;
+	CFont m_HeaderFont;
 
 	CString m_EQname[EQ_MAX]; // todo use std::vector<CString> instead of fixed-size array
 	STREAMINFO m_StreamInfo[LIST_MAX]; // todo use std::vector<STREAMDATA> instead of fixed-size array
@@ -31,7 +32,7 @@ public:
 	int m_NumStream, m_NumEQ;
 	CString m_StreamsFilepath, m_LastStatus;
 
-	bool LoadStreamUrlsFromFile(const CString& filePath);
+	int  LoadStreamUrlsFromFile(const CString& filePath);
 	void LoadStreamUrlList();
 	void UpdatePlayerStatusString();
 	void LoadEqualiserPresetsList(char *str);

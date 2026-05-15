@@ -28,38 +28,25 @@ static size_t CurlMemoryCallback(void *contents, size_t size, size_t nmemb, void
 	size_t realsize = size * nmemb;
 	MEMORYSTRUCT *pMS = (MEMORYSTRUCT*)userp;
 
-	if(realsize+1 > pMS->mem_size){		// the +1 is for the null terminator we will add at the end of the data block. This check ensures we have enough space to store the new data plus the null terminator.
+	if(realsize >= pMS->mem_size){		// the +1 is for the null terminator we will add at the end of the data block. This check ensures we have enough space to store the new data plus the null terminator.
 		char *pOldBuf = pMS->memory;
-		pMS->memory = (char*)realloc(pMS->memory, realsize+1);
-		pMS->mem_size = realsize+1;
-		
+		pMS->mem_size = realsize + 1 + 1024; // Add some extra space, +1 for the null terminator, and the rest to reduce the number of reallocations.
+		pMS->memory = (char*)realloc(pMS->memory, pMS->mem_size);		
 		if(pMS->memory == NULL){
 			AfxMessageBox(_T("Failed to allocate memory for HTTP response. The device may be sending a very large response or there may be insufficient memory available."));
 			if(pOldBuf)
 				free(pOldBuf);
 			pMS->mem_size = 0;
-			return 0;
+			pMS->memory = NULL;
 		}
 	}
 	if(memcpy_s(pMS->memory, pMS->mem_size, contents, realsize) != 0){
-		AfxMessageBox(_T("Failed to copy memory for HTTP response."));
+		AfxMessageBox(_T("Failed to copy memory from HTTP request."));
 		return 0;
 	}
 	pMS->memory[realsize] = 0;	// null terminate the string
-	pMS->response_size = realsize+1;
+	pMS->response_size = realsize + 1;
 	return realsize;
-
-	/*	this original code adds the new data to the end of the existing data in pMS->memory, but i dont need to keep the old data, so i can just overwrite it each time, and only allocate enough memory for the new data.
-	pMS->memory = (char*)realloc(pMS->memory, pMS->mem_size + realsize + 1);
-	if(pMS->memory == NULL) {
-		// out of memory
-		TRACE("not enough memory (realloc returned NULL)\n");
-		return 0;
-	}
-	memcpy(&(pMS->memory[pMS->mem_size]), contents, realsize);
-	pMS->mem_size += realsize;
-	pMS->memory[pMS->mem_size] = 0;
-	return realsize;*/
 }
 
 void CWiimHttpClient::CurlWiimConfig(CURL *curl_handle)
@@ -188,27 +175,34 @@ int CWiimHttpClient::GetStatusEx()
 	return 0;
 }
 
-int CWiimHttpClient::GetPlayerStatus()
+int CWiimHttpClient::GetMetaInfo()
 {
-/*	if(m_data.memory != NULL)
-		SendCommand("getMetaInfo");
-	// example response - { "metaData": { "album": "unknow", "title": "https://streaming05.liveboxstream.uk/proxy/selectr1/stream", "subtitle": "unknow", "artist": "unknow", "albumArtURI": "unknow", "sampleRate": "44100", "bitDepth": "32", "bitRate": "127", "trackId": "0" } } */
-
-	if(SendCommand("getPlayerStatus")){
-		// getPlayerStatus example string:
-		// {\"type\":\"0\",\"ch\":\"0\",\"mode\":\"31\",\"loop\":\"3\",\"eq\":\"0\",\"vendor\":\"spotify:search:Run+Up+%28feat.+PARTYNEXTDOOR+%26+Nicki+Minaj%29+Major+Lazer\",\"status\":\"play\",
-		// \"curpos\":\"118816\",\"offset_pts\":\"0\",\"totlen\":\"201254\",\"Title\":\"427920596F75722053696465\",\"Artist\":\"4A6F6E617320426C7565\",\"Album\":\"426C7565\",\"alarmflag\":\"0\",
-		// \"plicount\":\"0\",\"plicurr\":\"0\",\"vol\":\"65\",\"mute\":\"0\"}
-		if(ParseJsonString_PlayerStatus()){
-			m_Wiim.Initialised = 1;
+	if(SendCommand("getMetaInfo")){
+		// example response - { "metaData": { "album": "unknow", "title": "https://streaming05.liveboxstream.uk/proxy/selectr1/stream", "subtitle": "unknow", "artist": "unknow", "albumArtURI": "unknow", "sampleRate": "44100", "bitDepth": "32", "bitRate": "127", "trackId": "0" } } */
+		if(ParseJsonString_MetaInfo())
 			return 1;
-		}
 	}
-	m_Wiim.Initialised = 0;
 	return 0;
 }
 
-//
+void CWiimHttpClient::ResetMetaInfo()
+{
+	m_Wiim.sampleRate = "";
+	m_Wiim.bitDepth = "";
+	m_Wiim.bitRate = "";
+}
+
+int CWiimHttpClient::GetPlayerStatus()
+{
+	if(SendCommand("getPlayerStatus")){
+		// getPlayerStatus example string:
+		// {\"type\":\"0\",\"ch\":\"0\",\"mode\":\"31\",\"loop\":\"3\",\"eq\":\"0\",\"vendor\":\"spotify:search:Run+Up+%28feat.+PARTYNEXTDOOR+%26+Nicki+Minaj%29+Major+Lazer\",\"status\":\"play\",\"curpos\":\"118816\",\"offset_pts\":\"0\",
+		// \"totlen\":\"201254\",\"Title\":\"427920596F75722053696465\",\"Artist\":\"4A6F6E617320426C7565\",\"Album\":\"426C7565\",\"alarmflag\":\"0\",\"plicount\":\"0\",\"plicurr\":\"0\",\"vol\":\"65\",\"mute\":\"0\"}
+		if(ParseJsonString_PlayerStatus())
+			return 1;
+	}
+	return 0;
+}
 
 int CWiimHttpClient::PlayUrl(const std::string& url)
 {
@@ -257,14 +251,12 @@ char *CWiimHttpClient::GetEQList()
 
 int CWiimHttpClient::TogglePlay()
 {
-	// 2.3.6 Toggle pause/play
-	// Params: setPlayerCmd:onepause
+	// 2.3.6 Toggle pause/play, Params: setPlayerCmd:onepause
 	// If the state is paused, resume it; otherwise, pause it.
 	m_Wiim.status = (m_Wiim.status == "play") ? "pause" : "play";
 	return SendCommand("setPlayerCmd", "onepause");
 
-	// or maybe use this instead...
-	//
+	// or use this instead...
 	// play / pause / stop / resume
 /*	if(m_Wiim.status.compare("play") == 0)
 		return SendCommand("setPlayerCmd", "pause");
@@ -279,8 +271,7 @@ int CWiimHttpClient::ToggleMute()
 
 int CWiimHttpClient::VolumeStep(int step)
 {
-	// 2.3.11 Set volume
-	// Params: setPlayerCmd:vol:value
+	// 2.3.11 Set volume, Params: setPlayerCmd:vol:value
 	// https://10.10.10.254/httpapi.asp?command=setPlayerCmd:vol:value
 	// Value can be 0 to 100.
 	m_Wiim.vol += step;
@@ -304,7 +295,6 @@ std::string CWiimHttpClient::ExtractArtworkUrl(const std::string& vendor)
 	size_t pos = vendor.find(key);
 	if (pos == std::string::npos)
 		return "";
-
 	std::string encoded = vendor.substr(pos + key.length());
 	return UrlDecode(encoded);
 }
@@ -318,18 +308,6 @@ std::string CWiimHttpClient::FormatTimeMs(const std::string& msStr)
 	char buf[16];
 	snprintf(buf, sizeof(buf), "%d:%02d", minutes, seconds);
 	return std::string(buf);
-}
-
-std::string CWiimHttpClient::HexToUtf8(const std::string& hex)
-{
-	std::string out;
-	out.reserve(hex.size() / 2);
-	for (size_t i = 0; i + 1 < hex.size(); i += 2)
-	{
-		unsigned char byte = static_cast<unsigned char>(strtol(hex.substr(i, 2).c_str(), nullptr, 16));
-		out.push_back(byte);
-	}
-	return out; // already valid UTF‑8
 }
 
 std::string CWiimHttpClient::UrlDecode(const std::string& src)
@@ -412,16 +390,29 @@ int CWiimHttpClient::ParseJsonString_EqBand()
 	return 1;
 }
 
-/*
+int CWiimHttpClient::ParseJsonString_MetaInfo()
+{
+	json j;
+	try {
+		j = json::parse(m_data.memory);
+	}
+	catch (...) {
+		AfxMessageBox(_T("MetaInfo. Failed to parse JSON response. The response may be malformed or the device may not be responding correctly."));
+		return 0;
+	}
 
-hex to Utf8 conversion problem example :  
-
-"Title":"4461766964202844617272656E20456D6572736F6E2661706F733B7320556E6465727761746572204D697829","Artist":"4E6F7720506C6179696E673A2047757320477573",
-
-Title: David (Darren Emerson&apos;s Underwater Mix)
-Artist: Now Playing: Gus Gus
-Album: 
-
-... the title hasnt been converted correctly, the &apos; is still in there instead of the ' character, 
-
-*/
+	// metaData is nested in the response: { "metaData": { "sampleRate": "...", "bitDepth": "...", "bitRate": "..." } }
+	if (j.contains("metaData") && j["metaData"].is_object()) {
+		auto &md = j["metaData"];
+		m_Wiim.sampleRate = md.value("sampleRate", "");
+		m_Wiim.bitDepth   = md.value("bitDepth", "");
+		m_Wiim.bitRate    = md.value("bitRate", "");
+	}
+	else{
+		// Backwards-compatible fallback if device ever returns top-level fields
+		m_Wiim.sampleRate = j.value("sampleRate", "");
+		m_Wiim.bitDepth   = j.value("bitDepth", "");
+		m_Wiim.bitRate    = j.value("bitRate", "");
+	}
+	return 1;
+}
