@@ -32,14 +32,6 @@ You can send 'HTTPs Get' request to the device, most of the response is in the J
 Request format is https://x.x.x.x/httpapi.asp?command=********
 x.x.x.x is the IP address of the device, ******* is the actual command.
 
-Play,
-Pause,
-Stop,
-Next,
-Previous,
-Mute,
-VolumeUp,
-VolumeDown
 */
 
 struct WIIM_STATUS
@@ -71,6 +63,7 @@ struct MEMORYSTRUCT
 	char *memory;
 	size_t mem_size;
 	size_t response_size;
+	std::string error;
 };
 
 class CWiimHttpClient
@@ -80,6 +73,8 @@ public:
 	~CWiimHttpClient();
 
 	WIIM_STATUS m_Wiim;
+	WIIM_EQUALISER m_Eq;
+	std::string m_CurlErrorLog, m_ResponseErrorLog;
 
 	int GetStatusEx();
 	int GetMetaInfo();
@@ -89,7 +84,8 @@ public:
 	char *GetEQList();
 	int TogglePlay();
 	int PlayUrl(const std::string& url);
-	int GetEqStatus(int &EqualiserOn, CString &CurrentEqName);
+	int GetEqStatus(int &EqualiserOn);
+	int GetError(CString &ErrorString);
 	int EQLoad(char *pName);
 	int ToggleMute();
 	int VolumeStep(int step); // positive or negative
@@ -97,7 +93,6 @@ public:
 
 private:
 	MEMORYSTRUCT m_data;
-	WIIM_EQUALISER m_Eq;
 
 	int m_CurlGlobalInit;
 	int m_EqualiserOn = 0;

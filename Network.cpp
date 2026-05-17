@@ -8,6 +8,8 @@ using json = nlohmann::json;
 
 CWiimHttpClient::CWiimHttpClient()
 {
+	m_CurlErrorLog = "";
+	m_ResponseErrorLog = "";
 	m_CurlGlobalInit = 0;
 	memset(&m_data, 0, sizeof(m_data));
 }
@@ -33,7 +35,7 @@ static size_t CurlMemoryCallback(void *contents, size_t size, size_t nmemb, void
 		pMS->mem_size = realsize + 1 + 1024; // Add some extra space, +1 for the null terminator, and the rest to reduce the number of reallocations.
 		pMS->memory = (char*)realloc(pMS->memory, pMS->mem_size);		
 		if(pMS->memory == NULL){
-			AfxMessageBox(_T("Failed to allocate memory for HTTP response. The device may be sending a very large response or there may be insufficient memory available."));
+			pMS->error += "\r\n Error - Failed to allocate memory for HTTP response. The device may be sending a very large response or there may be insufficient memory available.";
 			if(pOldBuf)
 				free(pOldBuf);
 			pMS->mem_size = 0;
@@ -41,7 +43,7 @@ static size_t CurlMemoryCallback(void *contents, size_t size, size_t nmemb, void
 		}
 	}
 	if(memcpy_s(pMS->memory, pMS->mem_size, contents, realsize) != 0){
-		AfxMessageBox(_T("Failed to copy memory from HTTP request."));
+		pMS->error += "\r\n Error - Failed to copy memory from HTTP request.";
 		return 0;
 	}
 	pMS->memory[realsize] = 0;	// null terminate the string
@@ -62,7 +64,16 @@ void CWiimHttpClient::CurlWiimConfig(CURL *curl_handle)
 	// - CURLOPT_SSL_VERIFYHOST == 0L disables hostname checking. This further weakens TLS security. Use 2L to enable hostname verification.
 	curl_easy_setopt(curl_handle, CURLOPT_SSL_VERIFYHOST, 0L);
 
-	// Force DNS resolution to IPv4 only.
+	// Set a hard timeout for the entire transfer (in seconds).
+	// - CURLOPT_TIMEOUT = 2L limits the operation to 2 seconds to avoid blocking indefinitely. Tune this value based on network conditions.
+	curl_easy_setopt(curl_handle, CURLOPT_TIMEOUT, 2L);
+
+	// Disable libcurl use of signals.
+	// - CURLOPT_NOSIGNAL = 1L prevents libcurl from installing signal handlers (e.g. SIGALRM). This is required in multi-threaded applications and on
+	//   some platforms to avoid unsafe signal interactions. It can slightly affect timeout granularity on some systems.
+	curl_easy_setopt(curl_handle, CURLOPT_NOSIGNAL, 1L);
+	
+/*	// Force DNS resolution to IPv4 only.
 	// - CURL_IPRESOLVE_V4 ensures the request uses an IPv4 address. Useful when the target device has issues with IPv6 or when the network
 	//   environment prefers IPv4.
 	curl_easy_setopt(curl_handle, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
@@ -71,15 +82,7 @@ void CWiimHttpClient::CurlWiimConfig(CURL *curl_handle)
 	// - Some embedded or older HTTP servers require HTTP/1.0. If not required, consider using the default (HTTP/1.1 or negotiate HTTP/2) for better
 	//   performance and modern features.
 	curl_easy_setopt(curl_handle, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_0);
-
-	// Set a hard timeout for the entire transfer (in seconds).
-	// - CURLOPT_TIMEOUT = 5L limits the operation to 5 seconds to avoid blocking indefinitely. Tune this value based on network conditions.
-	curl_easy_setopt(curl_handle, CURLOPT_TIMEOUT, 5L);
-
-	// Disable libcurl use of signals.
-	// - CURLOPT_NOSIGNAL = 1L prevents libcurl from installing signal handlers (e.g. SIGALRM). This is required in multi-threaded applications and on
-	//   some platforms to avoid unsafe signal interactions. It can slightly affect timeout granularity on some systems.
-	curl_easy_setopt(curl_handle, CURLOPT_NOSIGNAL, 1L);
+*/
 }
 
 int CWiimHttpClient::HttpRequest(std::string &url)
@@ -87,7 +90,7 @@ int CWiimHttpClient::HttpRequest(std::string &url)
 	int Ok = 0;
 	if(CurlGlobalInit_Ok()){
 		CURL *curl_handle;
-		CURLcode result;
+		CURLcode code;
 		// init the curl session
 		curl_handle = curl_easy_init();
 		CurlWiimConfig(curl_handle);
@@ -97,15 +100,18 @@ int CWiimHttpClient::HttpRequest(std::string &url)
 		curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, CurlMemoryCallback);
 		// we pass our m_data struct to the callback function
 		curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void*)&m_data);
+
+		if(m_data.error != "")
+			m_CurlErrorLog += m_data.error;
+
 		// some servers do not like requests that are made without a user-agent	field, so we provide one
 		curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
 		// get it!
-		result = curl_easy_perform(curl_handle);
+		code = curl_easy_perform(curl_handle);
 		// check for errors
-		if(result != CURLE_OK){
-			std::string err = "curl_easy_perform() failed: \n\n";
-			err += curl_easy_strerror(result);
-			AfxMessageBox(Utf8(err));
+		if(code != CURLE_OK){
+			m_CurlErrorLog += "\r\n Error - curl_easy_perform() failed: ";
+			m_CurlErrorLog += curl_easy_strerror(code);
 		}
 		else{
 			// Now, our m_data.memory points to a memory block that is m_data.response_size bytes big and contains the remote file. Do something nice with it.
@@ -125,18 +131,20 @@ int CWiimHttpClient::CurlGlobalInit_Ok()
 		curl_easy_init()		per request
 		curl_easy_cleanup()		per request
 		curl_global_cleanup()	once     */
-
 		curl_global_init(CURL_GLOBAL_ALL);
-		m_data.mem_size = 10000; // initial size, will be grown as needed by realloc in the callback
-		m_data.memory = (char*)malloc(m_data.mem_size);
-		if(m_data.memory == NULL){
-			AfxMessageBox(_T("Failed to allocate memory for CURL response\n"));
-			m_data.mem_size = 0;
-			return 0;
-		}
 		m_CurlGlobalInit = 1;
 	}
-	return m_CurlGlobalInit;
+
+	if(m_data.memory==NULL && m_CurlErrorLog==""){	// m_CurlErrorLog=="" ensures there will only be one attempt, to allocate memory for the response.
+		m_data.mem_size = 10000;	// initial size, will be grown as needed by realloc in the callback.
+		m_data.memory = (char*)malloc(m_data.mem_size);
+		m_data.error = "";
+		if(m_data.memory == NULL){
+			m_CurlErrorLog += "\r\n Error - Failed to allocate memory for CURL response";
+			m_data.mem_size = 0;
+		}
+	}
+	return (m_CurlGlobalInit && m_data.memory!=NULL);
 }
 
 int CWiimHttpClient::SendCommand(const std::string& command, const std::string& arg_1, const std::string& arg_2, const std::string& arg_3)
@@ -179,8 +187,9 @@ int CWiimHttpClient::GetMetaInfo()
 {
 	if(SendCommand("getMetaInfo")){
 		// example response - { "metaData": { "album": "unknow", "title": "https://streaming05.liveboxstream.uk/proxy/selectr1/stream", "subtitle": "unknow", "artist": "unknow", "albumArtURI": "unknow", "sampleRate": "44100", "bitDepth": "32", "bitRate": "127", "trackId": "0" } } */
-		if(ParseJsonString_MetaInfo())
-			return 1;
+		if(strcmp(m_data.memory, "Failed") != 0)
+			if(ParseJsonString_MetaInfo())
+				return 1;
 	}
 	return 0;
 }
@@ -196,8 +205,8 @@ int CWiimHttpClient::GetPlayerStatus()
 {
 	if(SendCommand("getPlayerStatus")){
 		// getPlayerStatus example string:
-		// {\"type\":\"0\",\"ch\":\"0\",\"mode\":\"31\",\"loop\":\"3\",\"eq\":\"0\",\"vendor\":\"spotify:search:Run+Up+%28feat.+PARTYNEXTDOOR+%26+Nicki+Minaj%29+Major+Lazer\",\"status\":\"play\",\"curpos\":\"118816\",\"offset_pts\":\"0\",
-		// \"totlen\":\"201254\",\"Title\":\"427920596F75722053696465\",\"Artist\":\"4A6F6E617320426C7565\",\"Album\":\"426C7565\",\"alarmflag\":\"0\",\"plicount\":\"0\",\"plicurr\":\"0\",\"vol\":\"65\",\"mute\":\"0\"}
+		// {"type":"0","ch":"0","mode":"31","loop":"3","eq":"0","vendor":"spotify:search:Run+Up+%28feat.+PARTYNEXTDOOR+%26+Nicki+Minaj%29+Major+Lazer","status":"play","curpos":"118816","offset_pts":"0",
+		// "totlen":"201254","Title":"427920596F75722053696465","Artist":"4A6F6E617320426C7565","Album":"426C7565","alarmflag":"0","plicount":"0","plicurr":"0","vol":"65","mute":"0"}
 		if(ParseJsonString_PlayerStatus())
 			return 1;
 	}
@@ -214,7 +223,7 @@ int CWiimHttpClient::PlayUrl(const std::string& url)
 	return 0;
 }
 
-int CWiimHttpClient::GetEqStatus(int &EqualiserOn, CString &CurrentEqName)
+int CWiimHttpClient::GetEqStatus(int &EqualiserOn)
 {
 	// example response for EQGetBand:
 	// {"status":"OK","EQLevel":1,"source_name":"wifi","EQStat":"Off","Name":"bass up treble down","pluginURI":"http://moddevices.com/plugins/caps/Eq10HP","channelMode":"Stereo","EQBand":[{"index":0,"param_name":"band31hz","value":100},{"index":1,"param_name":"band63hz","value":100},{"index":2,"param_name":"band125hz","value":80},{"index":3,"param_name":"band250hz","value":55},{"index":4,"param_name":"band500hz","value":50},{"index":5,"param_name":"band1khz","value":50},{"index":6,"param_name":"band2khz","value":50},{"index":7,"param_name":"band4khz","value":56},{"index":8,"param_name":"band8khz","value":71},{"index":9,"param_name":"band16khz","value":86}]}
@@ -226,10 +235,22 @@ int CWiimHttpClient::GetEqStatus(int &EqualiserOn, CString &CurrentEqName)
 			else if(m_Eq.EQStat.compare("Off") == 0) m_EqualiserOn = 0;
 			Ok = 1;
 			EqualiserOn = m_EqualiserOn;
-			CurrentEqName = Utf8(m_Eq.Name);
 		}
 	}
 	return Ok;
+}
+
+int CWiimHttpClient::GetError(CString &ErrorString)
+{
+	// check the error string is the same length as it was last time we checked, if its not then new error should be displayed in UI.
+	static size_t PrevErrorLength = 0;
+	size_t ErrorLength = m_CurlErrorLog.length() + m_ResponseErrorLog.length();
+	if(ErrorLength != PrevErrorLength){
+		PrevErrorLength = ErrorLength;
+		ErrorString = Utf8(m_CurlErrorLog + m_ResponseErrorLog);
+		return 1;
+	}
+	return 0;
 }
 
 int CWiimHttpClient::EQLoad(char *pName)
@@ -337,7 +358,7 @@ int CWiimHttpClient::ParseJsonString_PlayerStatus()
 		j = json::parse(m_data.memory);
 	}
 	catch (...) {
-		AfxMessageBox(_T("PlayerStatus. Failed to parse JSON response. The response may be malformed or the device may not be responding correctly."));
+		m_ResponseErrorLog += "\r\n PlayerStatus. Failed to parse JSON response. The response may be malformed or the device may not be responding correctly.";
 		return 0;
 	}
 	// Integer fields
@@ -376,7 +397,7 @@ int CWiimHttpClient::ParseJsonString_EqBand()
 		j = json::parse(m_data.memory);
 	}
 	catch (...) {
-		AfxMessageBox(_T("EqBand. Failed to parse JSON response. The response may be malformed or the device may not be responding correctly."));
+		m_ResponseErrorLog += "\r\n EqBand. Failed to parse JSON response. The response may be malformed or the device may not be responding correctly.";
 		return 0;
 	}
 	m_Eq.status      = j.value("status", "");
@@ -397,10 +418,9 @@ int CWiimHttpClient::ParseJsonString_MetaInfo()
 		j = json::parse(m_data.memory);
 	}
 	catch (...) {
-		AfxMessageBox(_T("MetaInfo. Failed to parse JSON response. The response may be malformed or the device may not be responding correctly."));
+		m_ResponseErrorLog += "\r\n MetaInfo. Failed to parse JSON response. The response may be malformed or the device may not be responding correctly.";
 		return 0;
 	}
-
 	// metaData is nested in the response: { "metaData": { "sampleRate": "...", "bitDepth": "...", "bitRate": "..." } }
 	if (j.contains("metaData") && j["metaData"].is_object()) {
 		auto &md = j["metaData"];

@@ -5,9 +5,7 @@
 #pragma once
 
 #include "Network.h"
-
-#define EQ_MAX 150
-#define LIST_MAX 256
+#include <vector>
 
 struct STREAMINFO
 {
@@ -22,22 +20,21 @@ public:
 	CWiiMControllerDlg(CWnd* pParent = nullptr);	// standard constructor
 
 	int m_DeviceAvailable, m_InitUI;
-	CWiimHttpClient m_httpClient;
-	CListCtrl m_ListStream, m_ListEQ;
-	CFont m_HeaderFont;
 
-	CString m_EQname[EQ_MAX]; // todo use std::vector<CString> instead of fixed-size array
-	STREAMINFO m_StreamInfo[LIST_MAX]; // todo use std::vector<STREAMDATA> instead of fixed-size array
-
-	int m_NumStream, m_NumEQ;
-	CString m_StreamsFilepath, m_LastStatus;
+	CWiimHttpClient         m_httpClient;
+	CListCtrl               m_ListStream, m_ListEQ;
+	CFont                   m_HeaderFont;
+	std::vector<CString>    m_EqPresetNames; 
+	std::vector<STREAMINFO> m_StreamURLs;
+	CString                 m_StreamsFilepath, m_LastStatus, m_WndErrorLog;
 
 	int  LoadStreamUrlsFromFile(const CString& filePath);
 	void LoadStreamUrlList();
 	void UpdatePlayerStatusString();
 	void LoadEqualiserPresetsList(char *str);
-	void GetInfoFromDevice();
+	void SelectListItems();
 	void UpdateStatusEditBox();
+	int  GetInfoFromDeviceAndPopulateUI();
 
 // Dialog Data
 #ifdef AFX_DESIGN_TIME
