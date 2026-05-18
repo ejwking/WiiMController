@@ -28,7 +28,7 @@ CWiimHttpClient::~CWiimHttpClient()
 static size_t CurlMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp)
 {
 	size_t realsize = size * nmemb;
-	MEMORYSTRUCT *pMS = (MEMORYSTRUCT*)userp;
+	RESPONSE_MEM *pMS = (RESPONSE_MEM*)userp;
 
 	if(realsize >= pMS->mem_size){		// the +1 is for the null terminator we will add at the end of the data block. This check ensures we have enough space to store the new data plus the null terminator.
 		char *pOldBuf = pMS->memory;
@@ -112,6 +112,7 @@ int CWiimHttpClient::HttpRequest(std::string &url)
 		if(code != CURLE_OK){
 			m_CurlErrorLog += "\r\n Error - curl_easy_perform() failed: ";
 			m_CurlErrorLog += curl_easy_strerror(code);
+			m_CurlErrorLog += "\r\n ..(either device is offline or IP address is incorrect)";
 		}
 		else{
 			// Now, our m_data.memory points to a memory block that is m_data.response_size bytes big and contains the remote file. Do something nice with it.

@@ -58,7 +58,7 @@ struct WIIM_EQUALISER
 	int EQLevel;
 };
 
-struct MEMORYSTRUCT
+struct RESPONSE_MEM
 {
 	char *memory;
 	size_t mem_size;
@@ -92,7 +92,7 @@ public:
 	int ToggleEqualiserOnOff();
 
 private:
-	MEMORYSTRUCT m_data;
+	RESPONSE_MEM m_data;
 
 	int m_CurlGlobalInit;
 	int m_EqualiserOn = 0;
