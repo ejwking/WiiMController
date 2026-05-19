@@ -46,22 +46,23 @@ These macros handle Unicode/ANSI correctly.
 #endif
 
 #define REG_SECTION	_T("WiimCntrlWnd")
+#define EQ_ON_TEXT	_T("equaliser is ON")
+#define EQ_OFF_TEXT	_T("equaliser is OFF")
 
 CWiiMControllerDlg::CWiiMControllerDlg(CWnd* pParent /*=nullptr*/)
 	: CDialog(IDD_WIIMCONTROLLER_DIALOG, pParent)
 {
 	m_hIcon = AfxGetApp()->LoadIcon(IDR_MAINFRAME);
-	m_InitUI = 0;
-	m_httpClient.SetBaseUrl("192.168.0.228");
-	m_DeviceAvailable = 1;	// temp until discovery is implemented, just assume the device is available for now.
+	m_Initialised = 0;
 	//m_WndErrorLog = _T(""); unnecessary as CString default constructor already initializes to empty string.
 }
 
 void CWiiMControllerDlg::DoDataExchange(CDataExchange* pDX)
 {
 	CDialog::DoDataExchange(pDX);
-	DDX_Control(pDX, IDC_LIST_STREAMURL, m_ListStream);
-	DDX_Control(pDX, IDC_LIST_EQ, m_ListEQ);
+	DDX_Control(pDX,IDC_LIST_STREAMURL,m_ListStream);
+	DDX_Control(pDX,IDC_LIST_EQ,m_ListEQ);
+	DDX_Control(pDX,IDC_IPADDRESS_WIIM,m_IPCtrl);
 }
 
 BEGIN_MESSAGE_MAP(CWiiMControllerDlg, CDialog)
@@ -70,6 +71,7 @@ BEGIN_MESSAGE_MAP(CWiiMControllerDlg, CDialog)
 	
 	ON_NOTIFY(LVN_ITEMCHANGED,IDC_LIST_STREAMURL,&CWiiMControllerDlg::OnLvnItemchangedListStreamurl)
 	ON_NOTIFY(LVN_ITEMCHANGED,IDC_LIST_EQ,&CWiiMControllerDlg::OnLvnItemchangedListEq)
+	ON_NOTIFY(IPN_FIELDCHANGED,IDC_IPADDRESS_WIIM,&CWiiMControllerDlg::OnIpnFieldchangedIpaddressWiim)
 
 	ON_BN_CLICKED(IDC_BTN_LOAD_FILE,&CWiiMControllerDlg::OnBnClickedBtnLoadFile)
 	ON_BN_CLICKED(IDC_BTN_BROWSE,&CWiiMControllerDlg::OnBnClickedBtnBrowse)
@@ -94,7 +96,16 @@ BOOL CWiiMControllerDlg::OnInitDialog()
 	SetIcon(m_hIcon, FALSE);		// Set small icon
 
 	// TODO: Add extra initialization here
+	SetWindowText(_T("WiiM Controller - v1.0"));
 //	LoadEditboxFont(GetDlgItem(IDC_EDIT_STATUS));
+
+	m_IPAddress.Field0 = AfxGetApp()->GetProfileInt(REG_SECTION, _T("IP_Field0"), 192);
+	m_IPAddress.Field1 = AfxGetApp()->GetProfileInt(REG_SECTION, _T("IP_Field1"), 168);
+	m_IPAddress.Field2 = AfxGetApp()->GetProfileInt(REG_SECTION, _T("IP_Field2"), 0);
+	m_IPAddress.Field3 = AfxGetApp()->GetProfileInt(REG_SECTION, _T("IP_Field3"), 0);
+
+	m_IPCtrl.SetAddress(m_IPAddress.Field0, m_IPAddress.Field1, m_IPAddress.Field2, m_IPAddress.Field3);
+	m_httpClient.SetWiimIPaddress(m_IPAddress.Field0, m_IPAddress.Field1, m_IPAddress.Field2, m_IPAddress.Field3); // (192.168.0.228 in my case)
 
 	m_StreamsFilepath = AfxGetApp()->GetProfileString(REG_SECTION, _T("StreamsFilepath"), _T(""));
 	GetDlgItem(IDC_EDIT_STREAMSFILE)->SetWindowText(m_StreamsFilepath);
@@ -127,7 +138,7 @@ BOOL CWiiMControllerDlg::OnInitDialog()
 
 	if(GetInfoFromDeviceAndPopulateUI()){
 		SelectListItems();
-		m_InitUI = 1; // this must after the list control SetItemState/EnsureVisible calls because they will trigger a OnLvnItemchangedListStreamurl event.
+		m_Initialised = 1; // this must after the list control SetItemState/EnsureVisible calls because they will trigger a OnLvnItemchangedListStreamurl event.
 	}
 	UpdateStatusEditBox();
 
@@ -168,22 +179,20 @@ HCURSOR CWiiMControllerDlg::OnQueryDragIcon()
 
 int CWiiMControllerDlg::GetInfoFromDeviceAndPopulateUI()
 {
-	if(m_DeviceAvailable){
-		// if this first http request fails, then either the IP address is wrong or the WiiM is offline, in which case the other calls below will fail 
-		// as well, so dont attempt calling them, (and as this isnt yet multi-threaded calling them will make the window unresponsive for longer).
-		if(m_httpClient.GetPlayerStatus()){
-			m_httpClient.GetMetaInfo();
-			LoadEqualiserPresetsList(m_httpClient.GetEQList());
+	// if this first http request fails, then either the IP address is wrong or the WiiM is offline, in which case the other calls below will fail 
+	// as well, so dont attempt calling them, (and as this isnt yet multi-threaded calling them will make the window unresponsive for longer).
+	if(m_httpClient.GetPlayerStatus()){
+		m_httpClient.GetMetaInfo();
+		LoadEqualiserPresetsList(m_httpClient.GetEQList());
 
-			int EqEnabled = -1;
-			m_httpClient.GetEqStatus(EqEnabled);
-			if(EqEnabled==1 || EqEnabled==0)
-				GetDlgItem(IDC_BTN_TOGGLE_EQ)->SetWindowText(EqEnabled ? _T("equaliser is ON") : _T("equaliser is OFF"));
-			else
-				GetDlgItem(IDC_BTN_TOGGLE_EQ)->SetWindowText(_T("equaliser is ???"));
+		int EqEnabled = -1;
+		m_httpClient.GetEqStatus(EqEnabled);
+		if(EqEnabled==1 || EqEnabled==0)
+			GetDlgItem(IDC_BTN_TOGGLE_EQ)->SetWindowText(EqEnabled ? EQ_ON_TEXT : EQ_OFF_TEXT);
+		else
+			GetDlgItem(IDC_BTN_TOGGLE_EQ)->SetWindowText(_T("equaliser is ???"));
 
-			return 1;
-		}
+		return 1;
 	}
 	return 0;
 }
@@ -227,18 +236,10 @@ void CWiiMControllerDlg::SelectListItems()
 
 void CWiiMControllerDlg::OnBnClickedBtnRefreshStats()
 {
-	if(m_DeviceAvailable && m_InitUI){
+	if(m_Initialised){
 		m_httpClient.GetPlayerStatus();
 		m_httpClient.GetMetaInfo();
 		UpdateStatusEditBox();
-	}
-}
-
-void CWiiMControllerDlg::OnBnClickedBtnToggleEq()
-{
-	if(m_DeviceAvailable && m_InitUI){
-		int EqEnabled = m_httpClient.ToggleEqualiserOnOff();
-		GetDlgItem(IDC_BTN_TOGGLE_EQ)->SetWindowText(EqEnabled ? _T("equaliser is ON") : _T("equaliser is OFF"));
 	}
 }
 
@@ -330,7 +331,7 @@ void CWiiMControllerDlg::OnLvnItemchangedListStreamurl(NMHDR *pNMHDR, LRESULT *p
 	LPNMLISTVIEW pNMLV = reinterpret_cast<LPNMLISTVIEW>(pNMHDR);
 	// TODO: Add your control notification handler code here
 	*pResult = 0;
-	if(m_DeviceAvailable && m_InitUI){
+	if(m_Initialised){
 		TRACE("\n\nOnLvnItemchangedListStreamurl %d", pNMLV->iItem); // index of the changed item
 		std::string url = CT2A(m_StreamURLs[pNMLV->iItem].url);
 		m_httpClient.PlayUrl(url);
@@ -344,7 +345,7 @@ void CWiiMControllerDlg::OnLvnItemchangedListEq(NMHDR *pNMHDR,LRESULT *pResult)
 	LPNMLISTVIEW pNMLV = reinterpret_cast<LPNMLISTVIEW>(pNMHDR);
 	// TODO: Add your control notification handler code here
 	*pResult = 0;
-	if(m_DeviceAvailable && m_InitUI){
+	if(m_Initialised){
 		char Name[MAX_EQ_PRESET_NAME_LEN] = {0};
 		if(strcpy_s(Name, sizeof(Name)-1, CT2A(m_EqPresetNames[pNMLV->iItem])) == 0){
 			// replace ' ' with '+' in the equaliser profile name, as this is what the device expects for some reason, even though the presets list sent by the device 
@@ -352,8 +353,17 @@ void CWiiMControllerDlg::OnLvnItemchangedListEq(NMHDR *pNMHDR,LRESULT *pResult)
 			for(int i=0; Name[i]; i++)
 				if(Name[i] == ' ')
 					Name[i] = '+';
-			m_httpClient.EQLoad(Name);
+			if(m_httpClient.EQLoad(Name))
+				GetDlgItem(IDC_BTN_TOGGLE_EQ)->SetWindowText(EQ_ON_TEXT);
 		}
+	}
+}
+
+void CWiiMControllerDlg::OnBnClickedBtnToggleEq()
+{
+	if(m_Initialised){
+		int EqEnabled = m_httpClient.ToggleEqualiserOnOff();
+		GetDlgItem(IDC_BTN_TOGGLE_EQ)->SetWindowText(EqEnabled ? EQ_ON_TEXT : EQ_OFF_TEXT);
 	}
 }
 
@@ -392,17 +402,20 @@ void CWiiMControllerDlg::UpdatePlayerStatusString()
 //	std::string title = (m_httpClient.m_Wiim.vendor == "CustomPushUrl") ? "Custom URL" : m_httpClient.m_Wiim.Title;
 	std::string title = m_httpClient.m_Wiim.Title;
 
-	m_LastStatus.Format(_T("Vendor: %s\r\nTitle: %s\r\nArtist: %s\r\nAlbum: %s\r\nPosition: %s / %s\r\nStatus: %s\r\nPlaylist: %d / %d\r\nVolume: %d\r\nMute: %d"),
-		Utf8(m_httpClient.m_Wiim.vendor),
-		Utf8(title),
-		Utf8(m_httpClient.m_Wiim.Artist),
-		Utf8(m_httpClient.m_Wiim.Album),
-		Utf8(m_httpClient.m_Wiim.curpos_fmt),
-		Utf8(m_httpClient.m_Wiim.totlen_fmt),
-		Utf8(m_httpClient.m_Wiim.status),
-		m_httpClient.m_Wiim.plicurr, m_httpClient.m_Wiim.plicount,
-		m_httpClient.m_Wiim.vol, m_httpClient.m_Wiim.mute
-	);
+	if(m_httpClient.m_Wiim.status!="play" && m_httpClient.m_Wiim.status!="pause" && m_httpClient.m_Wiim.status!="stop")
+		m_LastStatus = _T("\r\n Ready, select a stream to play from the list below...");
+	else{
+		m_LastStatus.Format(_T("Vendor: %s\r\nTitle: %s\r\nArtist: %s\r\nPosition: %s / %s\r\nStatus: %s, Playlist: %d / %d\r\nVolume: %d, Mute: %d"),
+			Utf8(m_httpClient.m_Wiim.vendor),
+			Utf8(title),
+			Utf8(m_httpClient.m_Wiim.Artist),
+			Utf8(m_httpClient.m_Wiim.curpos_fmt),
+			Utf8(m_httpClient.m_Wiim.totlen_fmt),
+			Utf8(m_httpClient.m_Wiim.status),
+			m_httpClient.m_Wiim.plicurr, m_httpClient.m_Wiim.plicount,
+			m_httpClient.m_Wiim.vol, m_httpClient.m_Wiim.mute
+		);
+	}
 
 	if(m_httpClient.m_Wiim.sampleRate!="" && m_httpClient.m_Wiim.bitDepth!="" && m_httpClient.m_Wiim.bitRate!=""){
 		CString MetaInfoStr;
@@ -429,7 +442,7 @@ void CWiiMControllerDlg::OnBnClickedBtnBrowse()
 
 void CWiiMControllerDlg::OnBnClickedBtnVolUp()
 {
-	if(m_DeviceAvailable && m_InitUI){
+	if(m_Initialised){
 		m_httpClient.VolumeStep(1);
 		UpdateStatusEditBox();
 	}
@@ -437,7 +450,7 @@ void CWiiMControllerDlg::OnBnClickedBtnVolUp()
 
 void CWiiMControllerDlg::OnBnClickedBtnVolDown()
 {
-	if(m_DeviceAvailable && m_InitUI){
+	if(m_Initialised){
 		m_httpClient.VolumeStep(-1);
 		UpdateStatusEditBox();
 	}
@@ -445,7 +458,7 @@ void CWiiMControllerDlg::OnBnClickedBtnVolDown()
 
 void CWiiMControllerDlg::OnBnClickedBtnMute()
 {
-	if(m_DeviceAvailable && m_InitUI){
+	if(m_Initialised){
 		m_httpClient.ToggleMute();
 		UpdateStatusEditBox();
 	}
@@ -453,8 +466,31 @@ void CWiiMControllerDlg::OnBnClickedBtnMute()
 
 void CWiiMControllerDlg::OnBnClickedBtnTogglePlay()
 {
-	if(m_DeviceAvailable && m_InitUI){
+	if(m_Initialised){
 		m_httpClient.TogglePlay();
 		UpdateStatusEditBox();
 	}
+}
+
+void CWiiMControllerDlg::OnIpnFieldchangedIpaddressWiim(NMHDR *pNMHDR, LRESULT *pResult)
+{
+	LPNMIPADDRESS pIPAddr = reinterpret_cast<LPNMIPADDRESS>(pNMHDR);
+	// TODO: Add your control notification handler code here
+	*pResult = 0;
+	// not using this... instead I will retrieve the IP address in DestroyWindow and save it to the registry there.
+}
+
+BOOL CWiiMControllerDlg::DestroyWindow()
+{
+	IPADDRESS Temp;
+	m_IPCtrl.GetAddress(Temp.Field0, Temp.Field1, Temp.Field2, Temp.Field3);
+	if(Temp.Field0 != m_IPAddress.Field0)
+		AfxGetApp()->WriteProfileInt(REG_SECTION, _T("IP_Field0"), Temp.Field0);
+	if(Temp.Field1 != m_IPAddress.Field1)
+		AfxGetApp()->WriteProfileInt(REG_SECTION, _T("IP_Field1"), Temp.Field1);
+	if(Temp.Field2 != m_IPAddress.Field2)
+		AfxGetApp()->WriteProfileInt(REG_SECTION, _T("IP_Field2"), Temp.Field2);
+	if(Temp.Field3 != m_IPAddress.Field3)
+		AfxGetApp()->WriteProfileInt(REG_SECTION, _T("IP_Field3"), Temp.Field3);
+	return CDialog::DestroyWindow();
 }

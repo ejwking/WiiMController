@@ -112,7 +112,7 @@ int CWiimHttpClient::HttpRequest(std::string &url)
 		if(code != CURLE_OK){
 			m_CurlErrorLog += "\r\n Error - curl_easy_perform() failed: ";
 			m_CurlErrorLog += curl_easy_strerror(code);
-			m_CurlErrorLog += "\r\n ..(either device is offline or IP address is incorrect)";
+			m_CurlErrorLog += "\r\n ..( device is offline or IP address is incorrect )";
 		}
 		else{
 			// Now, our m_data.memory points to a memory block that is m_data.response_size bytes big and contains the remote file. Do something nice with it.
@@ -163,10 +163,9 @@ int CWiimHttpClient::SendCommand(const std::string& command, const std::string& 
 	return 0;
 }
 
-int CWiimHttpClient::SetBaseUrl(char *pUrl)
+int CWiimHttpClient::SetWiimIPaddress(BYTE Field0, BYTE Field1, BYTE Field2, BYTE Field3)
 {
-	// temp until discovery is implemented, just set the IP address of the device here.
-	m_Wiim.IP = std::string(pUrl);
+	m_Wiim.IP = std::to_string(Field0) + "." + std::to_string(Field1) + "." + std::to_string(Field2) + "." + std::to_string(Field3);
 	return 1;
 }
 
@@ -257,7 +256,18 @@ int CWiimHttpClient::GetError(CString &ErrorString)
 int CWiimHttpClient::EQLoad(char *pName)
 {
 	// SendCommand("EQLoad", "Classical");
-	return SendCommand("EQLoad", pName);
+	if(SendCommand("EQLoad", pName)){
+		m_EqualiserOn = 1;
+		return 1;
+	}
+	return 0;
+}
+
+int CWiimHttpClient::ToggleEqualiserOnOff()
+{
+	m_EqualiserOn = !m_EqualiserOn;
+	SendCommand(m_EqualiserOn ? "EQOn" : "EQOff");
+	return m_EqualiserOn;
 }
 
 char *CWiimHttpClient::GetEQList()
@@ -302,13 +312,6 @@ int CWiimHttpClient::VolumeStep(int step)
 	SendCommand("setPlayerCmd", "vol", std::to_string(m_Wiim.vol));
 	m_Wiim.mute = 0;
 	return 0;
-}
-
-int CWiimHttpClient::ToggleEqualiserOnOff()
-{
-	m_EqualiserOn = !m_EqualiserOn;
-	SendCommand(m_EqualiserOn ? "EQOn" : "EQOff");
-	return m_EqualiserOn;
 }
 
 std::string CWiimHttpClient::ExtractArtworkUrl(const std::string& vendor)
@@ -383,6 +386,8 @@ int CWiimHttpClient::ParseJsonString_PlayerStatus()
 	m_Wiim.Title  = HexToUtf8(j.value("Title", ""));
 	m_Wiim.Artist = HexToUtf8(j.value("Artist", ""));
 	m_Wiim.Album  = HexToUtf8(j.value("Album", ""));
+	if(m_Wiim.Artist == "")	m_Wiim.Artist = "Unknown";
+	if(m_Wiim.Album  == "")	m_Wiim.Album  = "Unknown";
 	// Time formatting
 	m_Wiim.curpos_fmt = FormatTimeMs(m_Wiim.curpos);
 	m_Wiim.totlen_fmt = FormatTimeMs(m_Wiim.totlen);

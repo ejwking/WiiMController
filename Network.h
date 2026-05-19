@@ -6,32 +6,13 @@
 #include <curl/curl.h>
 
 
-// How to install curl and libcurl using vcpkg
+// How to install curl using vcpkg
 // https://curl.se/docs/install.html
 
-
-/* FIX THIS
-warning: The vcpkg C:\dev\vcpkg\vcpkg.exe is using detected vcpkg root C:\dev\vcpkg and ignoring mismatched VCPKG_ROOT 
-environment value C:\Program Files\Microsoft Visual Studio\18\Community\VC\vcpkg. To suppress this message, unset the 
-environment variable or use the --vcpkg-root command line switch.
-
-ALSO SEE 
-https://learn.microsoft.com/en-gb/vcpkg/get_started/get-started-vs?pivots=shell-cmd
-which gives CLI command to set the environment variable permanently in the user environment.
-*/
-
-
 /*
-Device discovery
-WiiM uses SSDP (UPnP discovery).
-Good options:
-miniupnpc, simple, widely used
-Write your own SSDP client (UDP multicast to 239.255.255.250:1900)
-
 You can send 'HTTPs Get' request to the device, most of the response is in the JSON format.
 Request format is https://x.x.x.x/httpapi.asp?command=********
 x.x.x.x is the IP address of the device, ******* is the actual command.
-
 */
 
 struct WIIM_STATUS
@@ -80,7 +61,7 @@ public:
 	int GetMetaInfo();
 	void ResetMetaInfo();
 	int GetPlayerStatus();
-	int SetBaseUrl(char *pUrl);
+	int SetWiimIPaddress(BYTE Field0, BYTE Field1, BYTE Field2, BYTE Field3);
 	char *GetEQList();
 	int TogglePlay();
 	int PlayUrl(const std::string& url);
