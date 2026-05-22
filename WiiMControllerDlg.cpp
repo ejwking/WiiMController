@@ -2,38 +2,6 @@
 // WiiMControllerDlg.cpp : implementation file
 //
 
-
-/* NOTES
-
-* CString advantages
-Integrates perfectly with MFC controls (SetItemText, MessageBox, etc.)
-Automatic conversion to/from LPCTSTR
-Built‑in formatting (Format)
-Built‑in trimming, searching, replacing
-Handles Unicode correctly without extra work
-
-* std::string advantages
-Standard C++ (portable)
-Works well with STL algorithms
-Often faster for pure C++ logic
-No dependency on MFC
-
-* The hybrid approach (best for MFC apps)
-Most MFC applications naturally end up using both:
-UI layer → CString
-Internal data → std::string
-
-* Example of clean conversion between CString and std::string
-CString to std::string  
-std::string s = CT2A(cstr);
-
-std::string to CString
-CString cstr = CA2T(s.c_str());
-
-These macros handle Unicode/ANSI correctly.
-*/
-
-
 #include "pch.h"
 #include "framework.h"
 #include "WiiMController.h"
@@ -530,3 +498,33 @@ BOOL CWiiMControllerDlg::DestroyWindow()
 		AfxGetApp()->WriteProfileInt(REG_SECTION, _T("IP_Field3"), Temp.Field3);
 	return CDialog::DestroyWindow();
 }
+
+/* NOTES
+
+* CString advantages
+Integrates perfectly with MFC controls (SetItemText, MessageBox, etc.)
+Automatic conversion to/from LPCTSTR
+Built‑in formatting (Format)
+Built‑in trimming, searching, replacing
+Handles Unicode correctly without extra work
+
+* std::string advantages
+Standard C++ (portable)
+Works well with STL algorithms
+Often faster for pure C++ logic
+No dependency on MFC
+
+* The hybrid approach (best for MFC apps)
+Most MFC applications naturally end up using both:
+UI layer → CString
+Internal data → std::string
+
+* Example of clean conversion between CString and std::string
+CString to std::string  
+std::string s = CT2A(cstr);
+
+std::string to CString
+CString cstr = CA2T(s.c_str());
+
+These macros handle Unicode/ANSI correctly.
+*/
