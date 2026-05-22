@@ -54,6 +54,7 @@ CWiiMControllerDlg::CWiiMControllerDlg(CWnd* pParent /*=nullptr*/)
 {
 	m_hIcon = AfxGetApp()->LoadIcon(IDR_MAINFRAME);
 	m_Initialised = 0;
+	m_ListStream_SelectedIndex = -1;
 	//m_WndErrorLog = _T(""); unnecessary as CString default constructor already initializes to empty string.
 }
 
@@ -97,7 +98,6 @@ BOOL CWiiMControllerDlg::OnInitDialog()
 
 	// TODO: Add extra initialization here
 	SetWindowText(_T("WiiM Controller - v1.0"));
-//	LoadEditboxFont(GetDlgItem(IDC_EDIT_STATUS));
 
 	m_IPAddress.Field0 = AfxGetApp()->GetProfileInt(REG_SECTION, _T("IP_Field0"), 192);
 	m_IPAddress.Field1 = AfxGetApp()->GetProfileInt(REG_SECTION, _T("IP_Field1"), 168);
@@ -127,6 +127,7 @@ BOOL CWiiMControllerDlg::OnInitDialog()
 		LOGFONT lf;
 		pDlgFont->GetLogFont(&lf);
 		lf.lfWeight = FW_BOLD;
+	//	lf.lfHeight -= 2;
 		m_HeaderFont.DeleteObject();
 		m_HeaderFont.CreateFontIndirect(&lf);
 	}
@@ -135,6 +136,8 @@ BOOL CWiiMControllerDlg::OnInitDialog()
 		ph1->SetFont(&m_HeaderFont);
 	if(CHeaderCtrl* ph2 = m_ListEQ.GetHeaderCtrl())
 		ph2->SetFont(&m_HeaderFont);
+
+//	GetDlgItem(IDC_EDIT_STREAMSFILE)->SetFont(&m_HeaderFont);
 
 	if(GetInfoFromDeviceAndPopulateUI()){
 		SelectListItems();
@@ -149,8 +152,7 @@ BOOL CWiiMControllerDlg::OnInitDialog()
 // applications using the document/view model, this is automatically done for you by the framework.
 void CWiiMControllerDlg::OnPaint()
 {
-	if (IsIconic())
-	{
+	if (IsIconic()){
 		CPaintDC dc(this); // device context for painting
 		SendMessage(WM_ICONERASEBKGND, reinterpret_cast<WPARAM>(dc.GetSafeHdc()), 0);
 
@@ -165,8 +167,7 @@ void CWiiMControllerDlg::OnPaint()
 		// Draw the icon
 		dc.DrawIcon(x, y, m_hIcon);
 	}
-	else
-	{
+	else{
 		CDialog::OnPaint();
 	}
 }
@@ -283,7 +284,7 @@ int CWiiMControllerDlg::LoadStreamUrlsFromFile(const CString& filePath)
 {
 	CStdioFile file;
 	if(!file.Open(filePath, CFile::modeRead | CFile::typeText)){
-		m_WndErrorLog += _T("\r\n Error opening file: ") + filePath;
+		m_WndErrorLog += _T("\r\n Error opening radio urls file: ") + filePath;
 		return 0;
 	}
 
@@ -332,10 +333,10 @@ void CWiiMControllerDlg::OnLvnItemchangedListStreamurl(NMHDR *pNMHDR, LRESULT *p
 	// TODO: Add your control notification handler code here
 	*pResult = 0;
 	if(m_Initialised){
-		TRACE("\n\nOnLvnItemchangedListStreamurl %d", pNMLV->iItem); // index of the changed item
-		std::string url = CT2A(m_StreamURLs[pNMLV->iItem].url);
+		m_ListStream_SelectedIndex = pNMLV->iItem;
+		TRACE("\n\nOnLvnItemchangedListStreamurl %d", m_ListStream_SelectedIndex); // index of the changed item
+		std::string url = CT2A(m_StreamURLs[m_ListStream_SelectedIndex].url);
 		m_httpClient.PlayUrl(url);
-		m_httpClient.ResetMetaInfo(); // reset meta info so that old info from previous stream doesnt briefly show until the new info is retrieved from the device.
 		UpdateStatusEditBox();
 	}
 }
@@ -378,49 +379,83 @@ void CWiiMControllerDlg::LoadStreamUrlList()
 	}
 }
 
+#define UNSET_URL_TEXT	_T("Set the IP address of your WiiM device in the control above (restart app to apply new IP).")
+#define UNSET_PATH_TEXT	_T("Use the 'browse...' button at the bottom to select the .txt file containing the list of radio urls.\r\n   (See the example internet_radio.txt file provided on GitHub)")
 void CWiiMControllerDlg::UpdateStatusEditBox()
 {
+	// Error messages to be displayed in the UI. (This has become a bit complicated).
 	CString error;
-	if(m_httpClient.GetError(error) || !m_WndErrorLog.IsEmpty()){
 
-		if(!m_WndErrorLog.IsEmpty()){
-			error += m_WndErrorLog;
-			error += _T("\r\n To get rid of this message - fix the errors, and close and reopen window.");
-			// why the message above - m_WndErrorLog is error is permantent, whereas the error retrieved from m_httpClient.GetError(error) is only returned once when the error changes.
-		}
+	if(m_StreamsFilepath.IsEmpty() && !m_httpClient.m_IPset)
+		error.Format(_T("\r\nOn first use of this app you must:\r\n\r\n1) %s\r\n2) %s\r\n"), UNSET_URL_TEXT, UNSET_PATH_TEXT);
+	else if(!m_httpClient.m_IPset)
+		error.Format(_T("\r\nError - device IP not set: \r\n%s\r\n"), UNSET_URL_TEXT);
+	else if(m_StreamsFilepath.IsEmpty())
+		error.Format(_T("\r\nError - file not selected: \r\n%s\r\n"), UNSET_PATH_TEXT);
+
+	if(!error.IsEmpty()){
+		// first usage of app - error messages and instructions.
 		GetDlgItem(IDC_EDIT_STATUS)->SetWindowText(error);
+		m_WndErrorLog.Empty(); // any errors in here arent needed/wanted now.
 	}
 	else{
-		UpdatePlayerStatusString();
-		GetDlgItem(IDC_EDIT_STATUS)->SetWindowText(m_LastStatus);
+		if(m_httpClient.GetNewError(error) || !m_WndErrorLog.IsEmpty()){
+			if(!m_WndErrorLog.IsEmpty()){
+				error += m_WndErrorLog;
+				error += _T("\r\n To get rid of this message - fix the errors and close and reopen window.");
+				// why the message above - m_WndErrorLog is error is permantent, whereas the error retrieved from m_httpClient.GetError(error) is only returned once when the error changes.
+			}
+			GetDlgItem(IDC_EDIT_STATUS)->SetWindowText(error);
+		}
+		else{
+			UpdatePlayerStatusString();
+			GetDlgItem(IDC_EDIT_STATUS)->SetWindowText(m_LastStatus);
+		}
 	}
 }
 
 void CWiiMControllerDlg::UpdatePlayerStatusString()
 {
 	m_LastStatus.Empty();
-//	std::string title = (m_httpClient.m_Wiim.vendor == "CustomPushUrl") ? "Custom URL" : m_httpClient.m_Wiim.Title;
-	std::string title = m_httpClient.m_Wiim.Title;
 
 	if(m_httpClient.m_Wiim.status!="play" && m_httpClient.m_Wiim.status!="pause" && m_httpClient.m_Wiim.status!="stop")
 		m_LastStatus = _T("\r\n Ready, select a stream to play from the list below...");
 	else{
-		m_LastStatus.Format(_T("Vendor: %s\r\nTitle: %s\r\nArtist: %s\r\nPosition: %s / %s\r\nStatus: %s, Playlist: %d / %d\r\nVolume: %d, Mute: %d"),
-			Utf8(m_httpClient.m_Wiim.vendor),
-			Utf8(title),
-			Utf8(m_httpClient.m_Wiim.Artist),
-			Utf8(m_httpClient.m_Wiim.curpos_fmt),
-			Utf8(m_httpClient.m_Wiim.totlen_fmt),
-			Utf8(m_httpClient.m_Wiim.status),
-			m_httpClient.m_Wiim.plicurr, m_httpClient.m_Wiim.plicount,
-			m_httpClient.m_Wiim.vol, m_httpClient.m_Wiim.mute
-		);
-	}
 
-	if(m_httpClient.m_Wiim.sampleRate!="" && m_httpClient.m_Wiim.bitDepth!="" && m_httpClient.m_Wiim.bitRate!=""){
-		CString MetaInfoStr;
-		MetaInfoStr.Format(_T("\r\nSample Rate: %s Hz, Bit Depth: %s bit, Bit Rate: %s kb/s"), Utf8(m_httpClient.m_Wiim.sampleRate), Utf8(m_httpClient.m_Wiim.bitDepth), Utf8(m_httpClient.m_Wiim.bitRate));
-		m_LastStatus += MetaInfoStr;
+		if(m_httpClient.m_Wiim.vendor == "CustomPushUrl"){
+			// raw stream url. When getMetaData request is used url is put in title, but it also alters some characters, so use the original url from the list.
+			CString Title = Utf8(m_httpClient.m_Wiim.Title);
+			if(m_ListStream_SelectedIndex != -1)
+				Title = m_StreamURLs[m_ListStream_SelectedIndex].url;
+
+			m_LastStatus.Format(_T("Vendor: %s\r\nStream URL: %s\r\nPosition: %s\r\nStatus: %s\r\nVolume: %d, Mute: %d"),
+				Utf8(m_httpClient.m_Wiim.vendor),
+				Title,
+				Utf8(m_httpClient.m_Wiim.curpos_fmt),
+				Utf8(m_httpClient.m_Wiim.status),
+				m_httpClient.m_Wiim.vol, m_httpClient.m_Wiim.mute
+			);
+		}
+		else{
+			m_LastStatus.Format(_T("Vendor: %s\r\nTitle: %s\r\nArtist: %s\r\nPosition: %s / %s\r\nStatus: %s, Playlist: %d / %d\r\nVolume: %d, Mute: %d"),
+				Utf8(m_httpClient.m_Wiim.vendor),
+				Utf8(m_httpClient.m_Wiim.Title),
+				Utf8(m_httpClient.m_Wiim.Artist),
+				Utf8(m_httpClient.m_Wiim.curpos_fmt),
+				Utf8(m_httpClient.m_Wiim.totlen_fmt),
+				Utf8(m_httpClient.m_Wiim.status),
+				m_httpClient.m_Wiim.plicurr, m_httpClient.m_Wiim.plicount,
+				m_httpClient.m_Wiim.vol, m_httpClient.m_Wiim.mute
+			);
+		}
+
+		if(m_httpClient.m_Wiim.sampleRate!="" && m_httpClient.m_Wiim.bitDepth!="" && m_httpClient.m_Wiim.bitRate!=""){
+			CString MetaInfoStr;
+			MetaInfoStr.Format(_T("\r\nSample Rate: %s Hz, Bit Depth: %s bit, Bit Rate: %s kb/s"), Utf8(m_httpClient.m_Wiim.sampleRate), Utf8(m_httpClient.m_Wiim.bitDepth), Utf8(m_httpClient.m_Wiim.bitRate));
+			m_LastStatus += MetaInfoStr;
+		}
+		else
+			m_LastStatus += _T("\r\n Press 'refresh status information' button for [sampleRate, bitDepth, bitRate]");
 	}
 }
 
@@ -437,6 +472,7 @@ void CWiiMControllerDlg::OnBnClickedBtnBrowse()
 		m_StreamsFilepath = FileDlg.GetPathName();
 		GetDlgItem(IDC_EDIT_STREAMSFILE)->SetWindowText(m_StreamsFilepath);
 		AfxGetApp()->WriteProfileString(REG_SECTION, _T("StreamsFilepath"), m_StreamsFilepath);
+		LoadStreamUrlList();
 	}
 }
 

@@ -34,6 +34,7 @@ public:
 	std::vector<STREAMINFO> m_StreamURLs;
 	CString                 m_StreamsFilepath, m_LastStatus, m_WndErrorLog;
 	IPADDRESS               m_IPAddress;
+	int                     m_ListStream_SelectedIndex;
 
 	int  LoadStreamUrlsFromFile(const CString& filePath);
 	void LoadStreamUrlList();

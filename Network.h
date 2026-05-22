@@ -56,17 +56,17 @@ public:
 	WIIM_STATUS m_Wiim;
 	WIIM_EQUALISER m_Eq;
 	std::string m_CurlErrorLog, m_ResponseErrorLog;
+	int m_IPset;
 
 	int GetStatusEx();
 	int GetMetaInfo();
-	void ResetMetaInfo();
 	int GetPlayerStatus();
 	int SetWiimIPaddress(BYTE Field0, BYTE Field1, BYTE Field2, BYTE Field3);
 	char *GetEQList();
 	int TogglePlay();
 	int PlayUrl(const std::string& url);
 	int GetEqStatus(int &EqualiserOn);
-	int GetError(CString &ErrorString);
+	int GetNewError(CString &ErrorString);
 	int EQLoad(char *pName);
 	int ToggleMute();
 	int VolumeStep(int step); // positive or negative
@@ -74,7 +74,6 @@ public:
 
 private:
 	RESPONSE_MEM m_data;
-
 	int m_CurlGlobalInit;
 	int m_EqualiserOn = 0;
 

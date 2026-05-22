@@ -11,6 +11,7 @@ CWiimHttpClient::CWiimHttpClient()
 	m_CurlErrorLog = "";
 	m_ResponseErrorLog = "";
 	m_CurlGlobalInit = 0;
+	m_IPset = 0;
 	memset(&m_data, 0, sizeof(m_data));
 }
 
@@ -152,19 +153,26 @@ int CWiimHttpClient::SendCommand(const std::string& command, const std::string& 
 {
 	// example - setPlayerCmd:play:url
 	//           command:arg_1:arg_2
-	if(CurlGlobalInit_Ok()){
-		std::string Url = "https://" + m_Wiim.IP + "/httpapi.asp?command=" + command;
-		if(arg_1 != "") Url += ":" + arg_1;
-		if(arg_2 != "") Url += ":" + arg_2;
-		if(arg_3 != "") Url += ":" + arg_3;
-		if(HttpRequest(Url))
-			return 1;
+	if(m_IPset){
+		if(CurlGlobalInit_Ok()){
+			std::string Url = "https://" + m_Wiim.IP + "/httpapi.asp?command=" + command;
+			if(arg_1 != "") Url += ":" + arg_1;
+			if(arg_2 != "") Url += ":" + arg_2;
+			if(arg_3 != "") Url += ":" + arg_3;
+			if(HttpRequest(Url))
+				return 1;
+		}
 	}
 	return 0;
 }
 
 int CWiimHttpClient::SetWiimIPaddress(BYTE Field0, BYTE Field1, BYTE Field2, BYTE Field3)
 {
+	if(Field2==0 && Field3==0){	// 192.168.0.0 can legally exist on a LAN, but it cannot be assigned to an individual device.
+		m_IPset = 0;
+		return 0;
+	}
+	m_IPset = 1;
 	m_Wiim.IP = std::to_string(Field0) + "." + std::to_string(Field1) + "." + std::to_string(Field2) + "." + std::to_string(Field3);
 	return 1;
 }
@@ -194,13 +202,6 @@ int CWiimHttpClient::GetMetaInfo()
 	return 0;
 }
 
-void CWiimHttpClient::ResetMetaInfo()
-{
-	m_Wiim.sampleRate = "";
-	m_Wiim.bitDepth = "";
-	m_Wiim.bitRate = "";
-}
-
 int CWiimHttpClient::GetPlayerStatus()
 {
 	if(SendCommand("getPlayerStatus")){
@@ -217,7 +218,15 @@ int CWiimHttpClient::PlayUrl(const std::string& url)
 {
 //	if(SendCommand("setPlayerCmd", "playlist", url, "0")){	this command can be used instead of below.
 	if(SendCommand("setPlayerCmd", "play", url)){
+		// when we play a raw stream url, getMetaInfo doesnt work properly, we dont get artist and title etc. 
+		// below I populate the fields which are static in the same way as getMetaInfo does it, the non-static fields (eg, sampleRate) will be populated when getMetaInfo is called.
 		m_Wiim.Title = url;
+		m_Wiim.vendor = "CustomPushUrl";
+		m_Wiim.curpos_fmt = "0:01";
+		m_Wiim.status = "play";
+		m_Wiim.sampleRate = "";
+		m_Wiim.bitDepth = "";
+		m_Wiim.bitRate = "";
 		return 1;
 	}
 	return 0;
@@ -240,9 +249,10 @@ int CWiimHttpClient::GetEqStatus(int &EqualiserOn)
 	return Ok;
 }
 
-int CWiimHttpClient::GetError(CString &ErrorString)
+int CWiimHttpClient::GetNewError(CString &ErrorString)
 {
-	// check the error string is the same length as it was last time we checked, if its not then new error should be displayed in UI.
+	// only return 1, and error string, if theres a new(additional) error since the last time this was called.
+	// check if error string is the same length as it was last time, if its not then return the new error so it can be displayed in UI.
 	static size_t PrevErrorLength = 0;
 	size_t ErrorLength = m_CurlErrorLog.length() + m_ResponseErrorLog.length();
 	if(ErrorLength != PrevErrorLength){
