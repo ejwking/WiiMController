@@ -54,7 +54,7 @@ static size_t CurlMemoryCallback(void *contents, size_t size, size_t nmemb, void
 
 void CWiimHttpClient::CurlWiimConfig(CURL *curl_handle)
 {
-	// Specific setup to get the request working with the Wiim device. (Adjust these options based on your needs and security requirements).
+	// Specific setup to get the request working with the Wiim device.
 
 	// Disable verification of the peer's SSL certificate.
 	// - CURLOPT_SSL_VERIFYPEER == 0L turns off checking that the server's certificate is signed by a trusted CA. This is insecure for public

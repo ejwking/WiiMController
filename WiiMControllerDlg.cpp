@@ -23,7 +23,7 @@ CWiiMControllerDlg::CWiiMControllerDlg(CWnd* pParent /*=nullptr*/)
 	m_hIcon = AfxGetApp()->LoadIcon(IDR_MAINFRAME);
 	m_Initialised = 0;
 	m_ListStream_SelectedIndex = -1;
-	//m_WndErrorLog = _T(""); unnecessary as CString default constructor already initializes to empty string.
+	//m_UrlsErrorLog = _T(""); unnecessary as CString default constructor already initializes to empty string.
 }
 
 void CWiiMControllerDlg::DoDataExchange(CDataExchange* pDX)
@@ -87,7 +87,7 @@ BOOL CWiiMControllerDlg::OnInitDialog()
 
 	// equaliser presets list initialisation
 	m_ListEQ.SetExtendedStyle(LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
-	m_ListEQ.InsertColumn(0, _T("equaliser presets"), LVCFMT_LEFT, 200);
+	m_ListEQ.InsertColumn(0, _T("equaliser presets"), LVCFMT_LEFT, 190);
 
 	// create bold font once
 	CFont* pDlgFont = GetFont();
@@ -242,7 +242,8 @@ void CWiiMControllerDlg::LoadEqualiserPresetsList(char *str)
 			}
 		}
 		else{
-			m_WndErrorLog += _T("\r\n Error reading equaliser presets list. Preset name too long.");
+			// this will not happen. (to do - display preset name in msg box).
+			AfxMessageBox(_T("\r\n Error reading equaliser presets list. Preset name too long. Preset name skipped"));
 		}
 		str = end + 1;
 	}
@@ -250,15 +251,17 @@ void CWiiMControllerDlg::LoadEqualiserPresetsList(char *str)
 
 int CWiiMControllerDlg::LoadStreamUrlsFromFile(const CString& filePath)
 {
+	m_UrlsErrorLog.Empty();
+
 	CStdioFile file;
 	if(!file.Open(filePath, CFile::modeRead | CFile::typeText)){
-		m_WndErrorLog += _T("\r\n Error opening radio urls file: ") + filePath;
+		m_UrlsErrorLog += _T("\r\n Error opening custom stream urls file : ") + filePath;
 		return 0;
 	}
 
 	m_ListStream.DeleteAllItems(); // Clear existing items before loading new ones
 	m_StreamURLs.clear();
-	m_StreamURLs.reserve(256); // reserve some space to avoid multiple reallocations, (256 is unlikely to be reached).
+	m_StreamURLs.reserve(256); // reserve some space to avoid multiple reallocations.
 	int Ok = 1;
 	CString line, last_category = _T("");
 
@@ -277,7 +280,7 @@ int CWiiMControllerDlg::LoadStreamUrlsFromFile(const CString& filePath)
 					line.Trim();			// Remove (leading/trailing) whitespace
 					if(!line.IsEmpty()){
 						if(line.Find(_T("http")) != 0){
-							m_WndErrorLog += _T("\r\n Error reading streams .txt file. Expected URL on line after name <") + name + _T(">. \r\n Stopping loading further entries.");
+							m_UrlsErrorLog += _T("\r\nFormatting error in custom stream urls .txt file. \r\nURL expected on the line after stream name <") + name + _T(">. \r\nList incomplete - stopping loading further entries.");
 							Ok = 0;
 						}
 						else{
@@ -348,7 +351,7 @@ void CWiiMControllerDlg::LoadStreamUrlList()
 }
 
 #define UNSET_URL_TEXT	_T("Set the IP address of your WiiM device in the control above (restart app to apply new IP).")
-#define UNSET_PATH_TEXT	_T("Use the 'browse...' button at the bottom to select the .txt file containing the list of radio urls.\r\n   (See the example internet_radio.txt file provided on GitHub)")
+#define UNSET_PATH_TEXT	_T("Use the 'browse' button at the bottom to select the .txt file containing the list of custom stream urls.\r\n   (See the example internet_radio.txt provided on GitHub)")
 void CWiiMControllerDlg::UpdateStatusEditBox()
 {
 	// Error messages to be displayed in the UI. (This has become a bit complicated).
@@ -357,22 +360,19 @@ void CWiiMControllerDlg::UpdateStatusEditBox()
 	if(m_StreamsFilepath.IsEmpty() && !m_httpClient.m_IPset)
 		error.Format(_T("\r\nOn first use of this app you must:\r\n\r\n1) %s\r\n2) %s\r\n"), UNSET_URL_TEXT, UNSET_PATH_TEXT);
 	else if(!m_httpClient.m_IPset)
-		error.Format(_T("\r\nError - device IP not set: \r\n%s\r\n"), UNSET_URL_TEXT);
+		error.Format(_T("\r\nDevice IP not set: \r\n%s\r\n"), UNSET_URL_TEXT);
 	else if(m_StreamsFilepath.IsEmpty())
-		error.Format(_T("\r\nError - file not selected: \r\n%s\r\n"), UNSET_PATH_TEXT);
+		error.Format(_T("\r\nFile not selected: \r\n%s\r\n"), UNSET_PATH_TEXT);
 
 	if(!error.IsEmpty()){
 		// first usage of app - error messages and instructions.
 		GetDlgItem(IDC_EDIT_STATUS)->SetWindowText(error);
-		m_WndErrorLog.Empty(); // any errors in here arent needed/wanted now.
+		m_UrlsErrorLog.Empty(); // any errors in here arent needed/wanted now.
 	}
 	else{
-		if(m_httpClient.GetNewError(error) || !m_WndErrorLog.IsEmpty()){
-			if(!m_WndErrorLog.IsEmpty()){
-				error += m_WndErrorLog;
-				error += _T("\r\n To get rid of this message - fix the errors and close and reopen window.");
-				// why the message above - m_WndErrorLog is error is permantent, whereas the error retrieved from m_httpClient.GetError(error) is only returned once when the error changes.
-			}
+		if(m_httpClient.GetNewError(error) || !m_UrlsErrorLog.IsEmpty()){
+			if(!m_UrlsErrorLog.IsEmpty())
+				error += m_UrlsErrorLog;
 			GetDlgItem(IDC_EDIT_STATUS)->SetWindowText(error);
 		}
 		else{
@@ -423,7 +423,7 @@ void CWiiMControllerDlg::UpdatePlayerStatusString()
 			m_LastStatus += MetaInfoStr;
 		}
 		else
-			m_LastStatus += _T("\r\n Press 'refresh status information' button for [sampleRate, bitDepth, bitRate]");
+			m_LastStatus += _T("\r\n Press 'refresh info' button for [sampleRate, bitDepth, bitRate]");
 	}
 }
 
@@ -440,7 +440,7 @@ void CWiiMControllerDlg::OnBnClickedBtnBrowse()
 		m_StreamsFilepath = FileDlg.GetPathName();
 		GetDlgItem(IDC_EDIT_STREAMSFILE)->SetWindowText(m_StreamsFilepath);
 		AfxGetApp()->WriteProfileString(REG_SECTION, _T("StreamsFilepath"), m_StreamsFilepath);
-		LoadStreamUrlList();
+		OnBnClickedBtnLoadFile();
 	}
 }
 

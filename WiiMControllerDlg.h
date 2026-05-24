@@ -32,7 +32,7 @@ public:
 	CFont                   m_HeaderFont;
 	std::vector<CString>    m_EqPresetNames; 
 	std::vector<STREAMINFO> m_StreamURLs;
-	CString                 m_StreamsFilepath, m_LastStatus, m_WndErrorLog;
+	CString                 m_StreamsFilepath, m_LastStatus, m_UrlsErrorLog;
 	IPADDRESS               m_IPAddress;
 	int                     m_ListStream_SelectedIndex;
 
