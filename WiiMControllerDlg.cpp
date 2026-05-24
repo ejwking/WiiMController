@@ -255,7 +255,7 @@ int CWiiMControllerDlg::LoadStreamUrlsFromFile(const CString& filePath)
 
 	CStdioFile file;
 	if(!file.Open(filePath, CFile::modeRead | CFile::typeText)){
-		m_UrlsErrorLog += _T("\r\n Error opening custom stream urls file : ") + filePath;
+		m_UrlsErrorLog += _T("\r\n Error opening direct stream urls file : ") + filePath;
 		return 0;
 	}
 
@@ -280,7 +280,7 @@ int CWiiMControllerDlg::LoadStreamUrlsFromFile(const CString& filePath)
 					line.Trim();			// Remove (leading/trailing) whitespace
 					if(!line.IsEmpty()){
 						if(line.Find(_T("http")) != 0){
-							m_UrlsErrorLog += _T("\r\nFormatting error in custom stream urls .txt file. \r\nURL expected on the line after stream name <") + name + _T(">. \r\nList incomplete - stopping loading further entries.");
+							m_UrlsErrorLog += _T("\r\nFormatting error in direct stream urls .txt file. \r\nURL expected on the line after stream name <") + name + _T(">. \r\nList incomplete - stopping loading further entries.");
 							Ok = 0;
 						}
 						else{
@@ -351,7 +351,7 @@ void CWiiMControllerDlg::LoadStreamUrlList()
 }
 
 #define UNSET_URL_TEXT	_T("Set the IP address of your WiiM device in the control above (restart app to apply new IP).")
-#define UNSET_PATH_TEXT	_T("Use the 'browse' button at the bottom to select the .txt file containing the list of custom stream urls.\r\n   (See the example internet_radio.txt provided on GitHub)")
+#define UNSET_PATH_TEXT	_T("Use the 'browse' button at the bottom to select the .txt file containing the list of direct stream urls.\r\n   (See the example internet_radio.txt provided on GitHub)")
 void CWiiMControllerDlg::UpdateStatusEditBox()
 {
 	// Error messages to be displayed in the UI. (This has become a bit complicated).
@@ -386,8 +386,9 @@ void CWiiMControllerDlg::UpdatePlayerStatusString()
 {
 	m_LastStatus.Empty();
 
-	if(m_httpClient.m_Wiim.status!="play" && m_httpClient.m_Wiim.status!="pause" && m_httpClient.m_Wiim.status!="stop")
+	if(m_httpClient.m_Wiim.status == "none"){
 		m_LastStatus = _T("\r\n Ready, select a stream to play from the list below...");
+	}
 	else{
 
 		if(m_httpClient.m_Wiim.vendor == "CustomPushUrl"){
