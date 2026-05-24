@@ -1,39 +1,43 @@
 # pop
 
-bbc r1
+BBC R1
 http://as-hls-ww-live.akamaized.net/pool_01505109/live/ww/bbc_radio_one/bbc_radio_one.isml/bbc_radio_one-audio%3d320000.norewind.m3u8
-bbc r2
+BBC R2
 http://as-hls-ww-live.akamaized.net/pool_74208725/live/ww/bbc_radio_two/bbc_radio_two.isml/bbc_radio_two-audio%3d320000.norewind.m3u8
 capital (London)
 https://icecast.thisisdax.com/CapitalMP3
-bbc 1xtra
+BBC 1xtra
 http://as-hls-ww-live.akamaized.net/pool_92079267/live/ww/bbc_1xtra/bbc_1xtra.isml/bbc_1xtra-audio%3d320000.norewind.m3u8
 
 # talk
 
 LBC
 https://icecast.thisisdax.com/LBCUKMP3
-bbc r4
+BBC R4
 http://as-hls-ww-live.akamaized.net/pool_55057080/live/ww/bbc_radio_fourfm/bbc_radio_fourfm.isml/bbc_radio_fourfm-audio%3d320000.norewind.m3u8
-bbc r4 extra
+BBC R4 extra
 http://as-hls-ww-live.akamaized.net/pool_26173715/live/ww/bbc_radio_four_extra/bbc_radio_four_extra.isml/bbc_radio_four_extra-audio%3d320000.norewind.m3u8
+BBC World Service
+http://as-hls-ww-live.akamaized.net/pool_87948813/live/ww/bbc_world_service/bbc_world_service.isml/bbc_world_service-audio%3d320000.norewind.m3u8
 
 # country
 
 countryline
 http://listen-chriscountry.sharp-stream.com/chriscountrydab.mp3?ref=RF
 absolute country
-http://edge-bauerabsolute-05-gos2.sharp-stream.com/absolutecountryhigh.aac?aw_0_1st.skey=1778747626&aw_0_1st.playerid=BMUK_RPi
+http://edge-bauerabsolute-05-gos2.sharp-stream.com/absolutecountryhigh.aac?aw_0_1st.skey=1779625675&aw_0_1st.playerid=BMUK_RPi
+Y Country
+http://us5.internet-radio.com:8125/
 
-# house / dance
+# house/dance
 
 select radio
 https://streaming05.liveboxstream.uk/proxy/selectr1/stream
-house FM
+house fm
 https://uksoutha.streaming.broadcast.radio/housefm
-bbc r1 dance
+BBC R1 dance
 http://as-hls-ww-live.akamaized.net/pool_62063831/live/ww/bbc_radio_one_dance/bbc_radio_one_dance.isml/bbc_radio_one_dance-audio%3d320000.norewind.m3u8
-bbc r1 anthems
+BBC R1 anthems
 http://as-hls-ww-live.akamaized.net/pool_11351741/live/ww/bbc_radio_one_anthems/bbc_radio_one_anthems.isml/bbc_radio_one_anthems-audio%3d320000.norewind.m3u8
 
 # oldies
@@ -45,7 +49,7 @@ http://listen-boomradio.sharp-stream.com/65_boom_radio_live_256_aac?ref=RF
 
 # classical
 
-bbc r3
+BBC R3
 http://as-hls-ww-live.akamaized.net/pool_23461179/live/ww/bbc_radio_three/bbc_radio_three.isml/bbc_radio_three-audio%3d320000.norewind.m3u8
 classic fm
 https://icecast.thisisdax.com/ClassicFMMP3
@@ -62,6 +66,8 @@ arc radio
 https://stream.rcs.revma.com/wzkzp3hcnrcwv.pls
 roots regae
 https://streams.radio.co/s1df61e0af/listen
+sunrise
+http://stream1.themediasite.co.uk:8070/stream
 
 # radio paradise 
 
@@ -93,13 +99,5 @@ http://live02.rfi.fr/rfimonde-96k.mp3
 RFI Musique
 http://live02.rfi.fr/rfimusiquemonde-96k.mp3
 
-# indian
-
-sunrise
-http://stream1.themediasite.co.uk:8070/stream
-lyca gold
-http://listen-lycaradio.sharp-stream.com/1035.mp3?ref=RF
-lyca
-http://listen-lycaradio.sharp-stream.com/1458.mp3?ref=RF
 
 
