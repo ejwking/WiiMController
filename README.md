@@ -1,33 +1,37 @@
 # WiiMController
 
-WiiMController is a simple windows desktop app that lets you import a list of stream URLs and select one to play on your WiiM device.
-This is basically an 'Open Stream Network' controller in a windows app.
-I created this app because the official windows 'WiiM Home' app doesn't have the 'Open Stream Network' feature, and therefore isn't much use for controlling internet radio.
+- Windows desktop app for playing audio on WiiM devices from custom stream URLs, such as internet radio stations or podcasts.
+- Import a list of custom stream URLs into the app.
+- Basic player controls and equaliser preset selection.
 
-## Features
-- Create your own .txt file containing a list of stream 'Name and URL', and import this list into the app.
-- Select a stream in the UI to play on the WiiM device.
-- View basic player and metadata.
-- Load and select equaliser presets.
+I created this app because this functionality does not currently exist in the official WiiM desktop app. In the WiiM mobile app it does exist and is called 'Open Network Stream'. However, when sitting at your computer it’s more convenient to control your WiiM device directly from the desktop rather than reaching for your smartphone.
 
 ## Prerequisites
-- Visual Studio (Desktop C++ workload)
-- vcpkg (recommended)
-- libcurl (installed via vcpkg)
-
-To install vcpkg and libcurl follow instructions on the curl website - https://curl.se/docs/install.html
+- Visual Studio - include the Desktop C++ workload, and tick the option "C++ MFC for x64/x86 (Latest MSVC)"
+- curl (libcurl) installed via vcpkg
+- To install vcpkg and libcurl follow instructions on the cURL website - https://curl.se/docs/install.html
 
 ## Build
-1. Open the solution (`WiiMController.sln`) in Visual Studio.
-2. Build the solution (F5).
+- Open the solution (`WiiMController.sln`) in Visual Studio, and build (F5).
 
-## Usage
-- Prepare a .txt file, or use the example 'radio urls.txt' provided in this repo.
-- In the app: use the "browse" and "load/refresh" buttons to import the file.
-- This app does not (yet) do device discovery, in the UI you specify the IP address of your WiiM device (see screenshot). Your WiiM IP can easily be found in the WiiM phone app - click on Devices button at the bottom, then click on the cog wheel to take you to settings, then click on 'Network Status'.
-- Click on a stream in the list control to play it on the WiiM device.
+## Usage and Limitations
+- Keep your custom stream URLs in a text file, an example can be found in the examples folder (internet_radio.txt).
+- On first use you must manually input the IP address of your WiiM (it can be found in the WiiM mobile app settings page).
+- I have a WiiM Pro, however, this app should work on all WiiM devices as they all share the same core http API.
+- Currently I do not plan on adding device discovery or metadata polling.
 
-## License
-- MIT license.
+## Screenshot
 
-## Screenshots
+![screenshot](examples/screenshot.png)
+
+## Third-Party Libraries
+- nlohmann/json  
+  https://github.com/nlohmann/json  
+  Licensed under the MIT License.
+- libcurl  
+  https://curl.se/libcurl/  
+  Licensed under the curl license.
+
+## WiiMController License
+- MIT
+
