@@ -7,6 +7,7 @@
 #include "Network.h"
 #include <vector>
 
+
 struct STREAMINFO
 {
 	CString category, name, url;
@@ -36,13 +37,15 @@ public:
 	IPADDRESS               m_IPAddress;
 	int                     m_ListStream_SelectedIndex;
 
-	int  LoadStreamUrlsFromFile(const CString& filePath);
+	int  LoadStreamUrlsFromFile();
 	void LoadStreamUrlList();
 	void UpdatePlayerStatusString();
 	void LoadEqualiserPresetsList(char *str);
 	void SelectListItems();
 	void UpdateStatusEditBox();
 	int  GetInfoFromDeviceAndPopulateUI();
+	void RestoreWindowPos();
+	void ApplyCustomFont();
 
 // Dialog Data
 #ifdef AFX_DESIGN_TIME
@@ -58,7 +61,6 @@ protected:
 	// Generated message map functions
 	virtual void DoDataExchange(CDataExchange* pDX);	// DDX/DDV support
 	virtual BOOL OnInitDialog();
-	virtual BOOL DestroyWindow();
 	afx_msg void OnPaint();
 	afx_msg HCURSOR OnQueryDragIcon();
 
@@ -75,4 +77,5 @@ public:
 	afx_msg void OnBnClickedBtnMute();
 	afx_msg void OnBnClickedBtnTogglePlay();
 	afx_msg void OnIpnFieldchangedIpaddressWiim(NMHDR *pNMHDR,LRESULT *pResult);
+	afx_msg void OnDestroy();
 };

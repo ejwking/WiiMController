@@ -37,7 +37,8 @@ void CWiiMControllerDlg::DoDataExchange(CDataExchange* pDX)
 BEGIN_MESSAGE_MAP(CWiiMControllerDlg, CDialog)
 	ON_WM_PAINT()
 	ON_WM_QUERYDRAGICON()
-	
+	ON_WM_DESTROY()
+
 	ON_NOTIFY(LVN_ITEMCHANGED,IDC_LIST_STREAMURL,&CWiiMControllerDlg::OnLvnItemchangedListStreamurl)
 	ON_NOTIFY(LVN_ITEMCHANGED,IDC_LIST_EQ,&CWiiMControllerDlg::OnLvnItemchangedListEq)
 	ON_NOTIFY(IPN_FIELDCHANGED,IDC_IPADDRESS_WIIM,&CWiiMControllerDlg::OnIpnFieldchangedIpaddressWiim)
@@ -75,27 +76,41 @@ BOOL CWiiMControllerDlg::OnInitDialog()
 	m_IPCtrl.SetAddress(m_IPAddress.Field0, m_IPAddress.Field1, m_IPAddress.Field2, m_IPAddress.Field3);
 	m_httpClient.SetWiimIPaddress(m_IPAddress.Field0, m_IPAddress.Field1, m_IPAddress.Field2, m_IPAddress.Field3); // (192.168.0.228 in my case)
 
-	m_StreamsFilepath = AfxGetApp()->GetProfileString(REG_SECTION, _T("StreamsFilepath"), _T(""));
-	GetDlgItem(IDC_EDIT_STREAMSFILE)->SetWindowText(m_StreamsFilepath);
-
 	// stream url list initialisation
 	m_ListStream.SetExtendedStyle(LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
 	m_ListStream.InsertColumn(0, _T("category"), LVCFMT_LEFT, 100);
 	m_ListStream.InsertColumn(1, _T("name"), LVCFMT_LEFT, 120);
-	m_ListStream.InsertColumn(2, _T("url"), LVCFMT_LEFT, 1000);
+	m_ListStream.InsertColumn(2, _T("stream url"), LVCFMT_LEFT, 1000);
+
+	m_StreamsFilepath = AfxGetApp()->GetProfileString(REG_SECTION, _T("StreamsFilepath"), _T(""));
+	GetDlgItem(IDC_EDIT_STREAMSFILE)->SetWindowText(m_StreamsFilepath);
 	LoadStreamUrlList();
 
 	// equaliser presets list initialisation
 	m_ListEQ.SetExtendedStyle(LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
 	m_ListEQ.InsertColumn(0, _T("equaliser presets"), LVCFMT_LEFT, 190);
 
+	if(GetInfoFromDeviceAndPopulateUI()){
+		SelectListItems();
+		m_Initialised = 1; // this must after the list control SetItemState/EnsureVisible calls because they will trigger a OnLvnItemchangedListStreamurl event.
+	}
+	
+	ApplyCustomFont();
+	RestoreWindowPos();
+	UpdateStatusEditBox();
+
+	return TRUE;  // return TRUE unless you set the focus to a control
+}
+
+void CWiiMControllerDlg::ApplyCustomFont()
+{
 	// create bold font once
 	CFont* pDlgFont = GetFont();
 	if (pDlgFont) {
 		LOGFONT lf;
 		pDlgFont->GetLogFont(&lf);
 		lf.lfWeight = FW_BOLD;
-	//	lf.lfHeight -= 2;
+		//	lf.lfHeight -= 2;
 		m_HeaderFont.DeleteObject();
 		m_HeaderFont.CreateFontIndirect(&lf);
 	}
@@ -105,15 +120,59 @@ BOOL CWiiMControllerDlg::OnInitDialog()
 	if(CHeaderCtrl* ph2 = m_ListEQ.GetHeaderCtrl())
 		ph2->SetFont(&m_HeaderFont);
 
-//	GetDlgItem(IDC_EDIT_STREAMSFILE)->SetFont(&m_HeaderFont);
+	GetDlgItem(IDC_EDIT_STREAMSFILE)->SetFont(&m_HeaderFont);
+}
 
-	if(GetInfoFromDeviceAndPopulateUI()){
-		SelectListItems();
-		m_Initialised = 1; // this must after the list control SetItemState/EnsureVisible calls because they will trigger a OnLvnItemchangedListStreamurl event.
+void CWiiMControllerDlg::RestoreWindowPos()
+{
+	// restore window pos/size if saved
+	const int UNSET = -99999;
+	int left = AfxGetApp()->GetProfileInt(REG_SECTION, _T("Left"), UNSET);
+	if(left != UNSET){
+		int top = AfxGetApp()->GetProfileInt(REG_SECTION, _T("Top"), 0);
+		int width = AfxGetApp()->GetProfileInt(REG_SECTION, _T("Width"), 800);
+		int height = AfxGetApp()->GetProfileInt(REG_SECTION, _T("Height"), 600);
+		CRect rc(left, top, left + width, top + height);
+		// Ensure rect maps to a monitor (avoid restoring off-screen)
+		HMONITOR hm = MonitorFromRect(rc, MONITOR_DEFAULTTONULL);
+		if(hm){
+			MoveWindow(&rc);
+			int show = AfxGetApp()->GetProfileInt(REG_SECTION, _T("ShowCmd"), SW_SHOWNORMAL);
+			if(show == SW_SHOWMAXIMIZED || show == SW_MAXIMIZE)
+				ShowWindow(SW_MAXIMIZE);
+		}
 	}
-	UpdateStatusEditBox();
+}
 
-	return TRUE;  // return TRUE unless you set the focus to a control
+void CWiiMControllerDlg::OnDestroy()
+{
+	// capture IP before calling base
+	IPADDRESS Temp;
+	m_IPCtrl.GetAddress(Temp.Field0, Temp.Field1, Temp.Field2, Temp.Field3);
+	if(Temp.Field0 != m_IPAddress.Field0)
+		AfxGetApp()->WriteProfileInt(REG_SECTION, _T("IP_Field0"), Temp.Field0);
+	if(Temp.Field1 != m_IPAddress.Field1)
+		AfxGetApp()->WriteProfileInt(REG_SECTION, _T("IP_Field1"), Temp.Field1);
+	if(Temp.Field2 != m_IPAddress.Field2)
+		AfxGetApp()->WriteProfileInt(REG_SECTION, _T("IP_Field2"), Temp.Field2);
+	if(Temp.Field3 != m_IPAddress.Field3)
+		AfxGetApp()->WriteProfileInt(REG_SECTION, _T("IP_Field3"), Temp.Field3);
+
+	// capture placement before calling base
+	WINDOWPLACEMENT wp = {};
+	wp.length = sizeof(wp);
+	if (GetWindowPlacement(&wp)) {
+		// wp.rcNormalPosition is the normal (restored) rectangle
+		CRect r = wp.rcNormalPosition;
+		AfxGetApp()->WriteProfileInt(REG_SECTION, _T("Left"), r.left);
+		AfxGetApp()->WriteProfileInt(REG_SECTION, _T("Top"), r.top);
+		AfxGetApp()->WriteProfileInt(REG_SECTION, _T("Width"), r.Width());
+		AfxGetApp()->WriteProfileInt(REG_SECTION, _T("Height"), r.Height());
+		AfxGetApp()->WriteProfileInt(REG_SECTION, _T("ShowCmd"), wp.showCmd);
+	}
+
+	CDialog::OnDestroy();
+	// TODO: Add your message handler code here
 }
 
 // If you add a minimize button to your dialog, you will need the code below to draw the icon. For MFC 
@@ -249,13 +308,13 @@ void CWiiMControllerDlg::LoadEqualiserPresetsList(char *str)
 	}
 }
 
-int CWiiMControllerDlg::LoadStreamUrlsFromFile(const CString& filePath)
+int CWiiMControllerDlg::LoadStreamUrlsFromFile()
 {
 	m_UrlsErrorLog.Empty();
 
 	CStdioFile file;
-	if(!file.Open(filePath, CFile::modeRead | CFile::typeText)){
-		m_UrlsErrorLog += _T("\r\n Error opening direct stream urls file : ") + filePath;
+	if(!file.Open(m_StreamsFilepath, CFile::modeRead | CFile::typeText)){
+		m_UrlsErrorLog += _T("\r\n Error opening direct stream urls file : ") + m_StreamsFilepath;
 		return 0;
 	}
 
@@ -341,7 +400,7 @@ void CWiiMControllerDlg::OnBnClickedBtnToggleEq()
 
 void CWiiMControllerDlg::LoadStreamUrlList()
 {
-	if(LoadStreamUrlsFromFile(m_StreamsFilepath)){
+	if(LoadStreamUrlsFromFile()){
 		for(int i=0; i<m_StreamURLs.size(); i++){
 			int item = m_ListStream.InsertItem(i, m_StreamURLs[i].category);
 			m_ListStream.SetItemText(item, 1, m_StreamURLs[i].name);
@@ -482,22 +541,7 @@ void CWiiMControllerDlg::OnIpnFieldchangedIpaddressWiim(NMHDR *pNMHDR, LRESULT *
 	LPNMIPADDRESS pIPAddr = reinterpret_cast<LPNMIPADDRESS>(pNMHDR);
 	// TODO: Add your control notification handler code here
 	*pResult = 0;
-	// not using this... instead I will retrieve the IP address in DestroyWindow and save it to the registry there.
-}
-
-BOOL CWiiMControllerDlg::DestroyWindow()
-{
-	IPADDRESS Temp;
-	m_IPCtrl.GetAddress(Temp.Field0, Temp.Field1, Temp.Field2, Temp.Field3);
-	if(Temp.Field0 != m_IPAddress.Field0)
-		AfxGetApp()->WriteProfileInt(REG_SECTION, _T("IP_Field0"), Temp.Field0);
-	if(Temp.Field1 != m_IPAddress.Field1)
-		AfxGetApp()->WriteProfileInt(REG_SECTION, _T("IP_Field1"), Temp.Field1);
-	if(Temp.Field2 != m_IPAddress.Field2)
-		AfxGetApp()->WriteProfileInt(REG_SECTION, _T("IP_Field2"), Temp.Field2);
-	if(Temp.Field3 != m_IPAddress.Field3)
-		AfxGetApp()->WriteProfileInt(REG_SECTION, _T("IP_Field3"), Temp.Field3);
-	return CDialog::DestroyWindow();
+	// not using this... instead I will retrieve the IP address in the destroy window handler and save it to the registry there.
 }
 
 /* NOTES

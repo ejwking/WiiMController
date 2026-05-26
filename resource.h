@@ -18,6 +18,8 @@
 #define IDC_BTN_TOGGLE_PLAY             1026
 #define IDC_IPADDRESS1                  1027
 #define IDC_IPADDRESS_WIIM              1027
+#define IDC_STATIC_IP1                  1028
+#define IDC_STATIC_IP2                  1029
 
 // Next default values for new objects
 // 
@@ -25,7 +27,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        131
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         1028
+#define _APS_NEXT_CONTROL_VALUE         1030
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif
