@@ -24,8 +24,6 @@ http://as-hls-ww-live.akamaized.net/pool_87948813/live/ww/bbc_world_service/bbc_
 
 countryline
 http://listen-chriscountry.sharp-stream.com/chriscountrydab.mp3?ref=RF
-absolute country
-http://edge-bauerabsolute-05-gos2.sharp-stream.com/absolutecountryhigh.aac?aw_0_1st.skey=1779625675&aw_0_1st.playerid=BMUK_RPi
 Y Country
 http://us5.internet-radio.com:8125/
 

@@ -35,7 +35,7 @@ public:
 	std::vector<STREAMINFO> m_StreamURLs;
 	CString                 m_StreamsFilepath, m_LastStatus, m_UrlsErrorLog;
 	IPADDRESS               m_IPAddress;
-	int                     m_ListStream_SelectedIndex;
+	int                     m_ListStream_SelectedIndex, m_ListEQ_SelectedIndex;
 
 	int  LoadStreamUrlsFromFile();
 	void LoadStreamUrlList();
@@ -69,7 +69,7 @@ public:
 	afx_msg void OnLvnItemchangedListEq(NMHDR *pNMHDR,LRESULT *pResult);
 	afx_msg void OnLvnItemchangedListStreamurl(NMHDR *pNMHDR,LRESULT *pResult);
 	afx_msg void OnBnClickedBtnLoadFile();
-	afx_msg void OnBnClickedBtnBrowse();
+	afx_msg void OnBnClickedBtnOpen();
 	afx_msg void OnBnClickedBtnToggleEq();
 	afx_msg void OnBnClickedBtnRefreshStats();
 	afx_msg void OnBnClickedBtnVolUp();

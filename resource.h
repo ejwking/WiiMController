@@ -9,6 +9,7 @@
 #define IDC_EDIT_STREAMSFILE            1015
 #define IDC_BTN_LOAD_FILE               1016
 #define IDC_BTN_BROWSE                  1017
+#define IDC_BTN_OPEN                    1017
 #define IDC_EDIT_STATUS                 1018
 #define IDC_BTN_TOGGLE_EQ               1019
 #define IDC_BTN_REFRESH_STATS           1021

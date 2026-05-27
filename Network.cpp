@@ -117,7 +117,7 @@ int CWiimHttpClient::HttpRequest(std::string &url)
 		}
 		else{
 			// Now, our m_data.memory points to a memory block that is m_data.response_size bytes big and contains the remote file. Do something nice with it.
-			TRACE("\n\n%d bytes retrieved\n%s\n\n", m_data.response_size, m_data.memory);
+			TRACE("\nrequest: %s\n%d bytes retrieved\n%s\n\n", url.c_str(), m_data.response_size, m_data.memory);
 			Ok = 1;
 		}
 		// cleanup curl stuff

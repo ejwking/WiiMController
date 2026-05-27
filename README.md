@@ -14,6 +14,9 @@ I created this app because this functionality does not currently exist in the of
 ## Build
 - Open the solution (`WiiMController.sln`) in Visual Studio, and build (F5).
 
+## Just give me the application
+- If you don't want to build the project yourself, download the ready-to-run .zip file from the Releases section.
+
 ## Usage and Limitations
 - Keep your direct stream URLs in a text file, an example can be found in the examples folder (internet_radio.txt).
 - On first use you must manually input the IP address of your WiiM (it can be found in the WiiM mobile app settings page).
@@ -34,4 +37,3 @@ I created this app because this functionality does not currently exist in the of
 
 ## WiiMController License
 - MIT
-

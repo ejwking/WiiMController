@@ -1,4 +1,3 @@
-
 // WiiMControllerDlg.cpp : implementation file
 //
 
@@ -23,6 +22,7 @@ CWiiMControllerDlg::CWiiMControllerDlg(CWnd* pParent /*=nullptr*/)
 	m_hIcon = AfxGetApp()->LoadIcon(IDR_MAINFRAME);
 	m_Initialised = 0;
 	m_ListStream_SelectedIndex = -1;
+	m_ListEQ_SelectedIndex = -1;
 	//m_UrlsErrorLog = _T(""); unnecessary as CString default constructor already initializes to empty string.
 }
 
@@ -44,7 +44,7 @@ BEGIN_MESSAGE_MAP(CWiiMControllerDlg, CDialog)
 	ON_NOTIFY(IPN_FIELDCHANGED,IDC_IPADDRESS_WIIM,&CWiiMControllerDlg::OnIpnFieldchangedIpaddressWiim)
 
 	ON_BN_CLICKED(IDC_BTN_LOAD_FILE,&CWiiMControllerDlg::OnBnClickedBtnLoadFile)
-	ON_BN_CLICKED(IDC_BTN_BROWSE,&CWiiMControllerDlg::OnBnClickedBtnBrowse)
+	ON_BN_CLICKED(IDC_BTN_OPEN,&CWiiMControllerDlg::OnBnClickedBtnOpen)
 	ON_BN_CLICKED(IDC_BTN_TOGGLE_EQ,&CWiiMControllerDlg::OnBnClickedBtnToggleEq)
 	ON_BN_CLICKED(IDC_BTN_REFRESH_STATS,&CWiiMControllerDlg::OnBnClickedBtnRefreshStats)
 	ON_BN_CLICKED(IDC_BTN_VOL_UP,&CWiiMControllerDlg::OnBnClickedBtnVolUp)
@@ -246,6 +246,7 @@ void CWiiMControllerDlg::SelectListItems()
 		if(list_url.Compare(Utf8(m_httpClient.m_Wiim.Title)) == 0){
 			m_ListStream.SetItemState(i, LVIS_SELECTED, LVIS_SELECTED);
 			m_ListStream.EnsureVisible(i, FALSE);
+			m_ListStream_SelectedIndex = i;
 			break;
 		}
 	}
@@ -257,6 +258,7 @@ void CWiiMControllerDlg::SelectListItems()
 		if(m_EqPresetNames[i].Compare(CurrentEqName) == 0){
 			m_ListEQ.SetItemState(i, LVIS_SELECTED, LVIS_SELECTED);
 			m_ListEQ.EnsureVisible(i, FALSE);
+			m_ListEQ_SelectedIndex = i;
 			break;
 		}
 	}
@@ -271,19 +273,14 @@ void CWiiMControllerDlg::OnBnClickedBtnRefreshStats()
 	}
 }
 
-#define MAX_EQ_PRESET_NAME_LEN 256
 void CWiiMControllerDlg::LoadEqualiserPresetsList(char *str)
 {
 	// this function will only be called once, when the window is initialized.
 	// example equaliser list (char) string from the device :
 	//  "[ \"Flat\", \"Acoustic\", \"Bass Booster\", \"Bass Reducer\", \"Classical\", \"Dance\", \"Deep\", \"Electronic\", \"Game\", \"Hip-Hop\", \"Jazz\", \"Latin\", \"Loudness\", \"Lounge\", \"Movie\", \"Piano\", \"Pop\", \"R&B\", \"Rock\", \"Small Speakers\", \"Spoken Word\", \"Treble Booster\", \"Treble Reducer\", \"Vocal Booster\", \"bass up treble down\", \"low frequencys up\", \"middle down\", \"middle down 2\" ]";
-	char TempBuf[MAX_EQ_PRESET_NAME_LEN];
-	CString csTemp;
-
 	m_ListEQ.DeleteAllItems();
 	m_EqPresetNames.clear();
 	m_EqPresetNames.reserve(100); // reserve some space to avoid multiple reallocations, (100 presets is unlikely).
-	
 	while(str){
 		char *start = strchr(str, '\"');
 		if(!start)
@@ -292,17 +289,20 @@ void CWiiMControllerDlg::LoadEqualiserPresetsList(char *str)
 		if(!end)
 			break;
 		size_t len = (end - start) - 1;
-		if(len+1 < sizeof(TempBuf)){
-			if(strncpy_s(TempBuf, sizeof(TempBuf), start+1, len) == 0){
-				TempBuf[len] = '\0';	// null-terminate the string
-				csTemp = TempBuf;
-				m_ListEQ.InsertItem((int)m_EqPresetNames.size(), csTemp);
-				m_EqPresetNames.push_back(csTemp);
-			}
-		}
-		else{
-			// this will not happen. (to do - display preset name in msg box).
-			AfxMessageBox(_T("\r\n Error reading equaliser presets list. Preset name too long. Preset name skipped"));
+
+		if(len > 0){
+			/* method 1 - works but silly the string type conversion.
+			// use std::string to copy exactly 'len' chars
+			std::string preset(start + 1, len);
+			CString csTemp(preset.c_str());		*/
+
+			// method 2 - more efficient and straightforward, just use CStringA to copy the narrow substring, then convert to CString (TCHAR) using CA2T which handles ANSI/Unicode conversions based on the project settings.
+			// Use CStringA to copy the narrow substring, then convert to CString (TCHAR)
+			CStringA presetA(start + 1, static_cast<int>(len));
+			CString csTemp = CA2T(presetA); // converts using current ANSI/Unicode macros
+
+			m_ListEQ.InsertItem((int)m_EqPresetNames.size(), csTemp);
+			m_EqPresetNames.push_back(csTemp);
 		}
 		str = end + 1;
 	}
@@ -314,7 +314,7 @@ int CWiiMControllerDlg::LoadStreamUrlsFromFile()
 
 	CStdioFile file;
 	if(!file.Open(m_StreamsFilepath, CFile::modeRead | CFile::typeText)){
-		m_UrlsErrorLog += _T("\r\n Error opening direct stream urls file : ") + m_StreamsFilepath;
+		m_UrlsErrorLog += _T("\r\nError opening direct stream urls file : \r\n     ") + m_StreamsFilepath;
 		return 0;
 	}
 
@@ -363,29 +363,41 @@ void CWiiMControllerDlg::OnLvnItemchangedListStreamurl(NMHDR *pNMHDR, LRESULT *p
 	// TODO: Add your control notification handler code here
 	*pResult = 0;
 	if(m_Initialised){
-		m_ListStream_SelectedIndex = pNMLV->iItem;
-		TRACE("\n\nOnLvnItemchangedListStreamurl %d", m_ListStream_SelectedIndex); // index of the changed item
-		std::string url = CT2A(m_StreamURLs[m_ListStream_SelectedIndex].url);
-		m_httpClient.PlayUrl(url);
-		UpdateStatusEditBox();
+		if(m_ListStream_SelectedIndex != pNMLV->iItem){
+			if(pNMLV->iItem>=0 && pNMLV->iItem<(int)(m_StreamURLs.size())){
+
+				m_ListStream_SelectedIndex = pNMLV->iItem;
+				TRACE("\n\nItemchanged ListStreamurl %d  ", m_ListStream_SelectedIndex);
+
+				std::string url = CT2A(m_StreamURLs[m_ListStream_SelectedIndex].url);
+				m_httpClient.PlayUrl(url);
+				UpdateStatusEditBox();
+			}
+		}
 	}
 }
 
-void CWiiMControllerDlg::OnLvnItemchangedListEq(NMHDR *pNMHDR,LRESULT *pResult)
+void CWiiMControllerDlg::OnLvnItemchangedListEq(NMHDR *pNMHDR, LRESULT *pResult)
 {
 	LPNMLISTVIEW pNMLV = reinterpret_cast<LPNMLISTVIEW>(pNMHDR);
 	// TODO: Add your control notification handler code here
 	*pResult = 0;
 	if(m_Initialised){
-		char Name[MAX_EQ_PRESET_NAME_LEN] = {0};
-		if(strcpy_s(Name, sizeof(Name)-1, CT2A(m_EqPresetNames[pNMLV->iItem])) == 0){
-			// replace ' ' with '+' in the equaliser profile name, as this is what the device expects for some reason, even though the presets list sent by the device 
-			// have spaces in their names, when sending a command to change to one of those presets it expects the spaces to be replaced with + symbols.
-			for(int i=0; Name[i]; i++)
-				if(Name[i] == ' ')
-					Name[i] = '+';
-			if(m_httpClient.EQLoad(Name))
-				GetDlgItem(IDC_BTN_TOGGLE_EQ)->SetWindowText(EQ_ON_TEXT);
+		if(m_ListEQ_SelectedIndex != pNMLV->iItem){
+			if(pNMLV->iItem>=0 && pNMLV->iItem<(int)(m_EqPresetNames.size())){
+
+				m_ListEQ_SelectedIndex = pNMLV->iItem;
+				TRACE("\n\nItemchanged ListEq %d  ", m_ListEQ_SelectedIndex);
+
+				CString name = m_EqPresetNames[pNMLV->iItem];
+				// replace ' ' with '+' in the equaliser profile name, as this is what the device expects for some reason, even though the presets list sent by the device 
+				// have spaces in their names, when sending a command to change to one of those presets it expects the spaces to be replaced with + symbols.
+				name.Replace(' ', '+');
+				// convert to narrow string for the HTTP client (CT2A handles Unicode/ANSI conversions)
+				CT2A ansiName(name);
+				if(m_httpClient.EQLoad(ansiName))
+					GetDlgItem(IDC_BTN_TOGGLE_EQ)->SetWindowText(EQ_ON_TEXT);
+			}
 		}
 	}
 }
@@ -410,7 +422,7 @@ void CWiiMControllerDlg::LoadStreamUrlList()
 }
 
 #define UNSET_URL_TEXT	_T("Set the IP address of your WiiM device in the control above (restart app to apply new IP).")
-#define UNSET_PATH_TEXT	_T("Use the 'browse' button at the bottom to select the .txt file containing the list of direct stream urls.\r\n   (See the example internet_radio.txt provided on GitHub)")
+#define UNSET_PATH_TEXT	_T("Press 'open' button at the bottom to open file containing the list of direct stream urls.\r\n   (See the example internet_radio.txt provided on GitHub)")
 void CWiiMControllerDlg::UpdateStatusEditBox()
 {
 	// Error messages to be displayed in the UI. (This has become a bit complicated).
@@ -493,7 +505,7 @@ void CWiiMControllerDlg::OnBnClickedBtnLoadFile()
 	UpdateStatusEditBox();
 }
 
-void CWiiMControllerDlg::OnBnClickedBtnBrowse()
+void CWiiMControllerDlg::OnBnClickedBtnOpen()
 {
 	CFileDialog FileDlg(TRUE, _T("txt"), nullptr, OFN_FILEMUSTEXIST, _T("Text Files (*.txt)|*.txt|All Files (*.*)|*.*||"));
 	if(FileDlg.DoModal() == IDOK){
