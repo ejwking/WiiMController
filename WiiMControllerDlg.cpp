@@ -5,8 +5,9 @@
 #include "framework.h"
 #include "WiiMController.h"
 #include "WiiMControllerDlg.h"
-#include "afxdialogex.h"
+//#include "afxdialogex.h"
 #include "tools.h"
+#include <fstream>
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -129,8 +130,8 @@ void CWiiMControllerDlg::RestoreWindowPos()
 	const int UNSET = -99999;
 	int left = AfxGetApp()->GetProfileInt(REG_SECTION, _T("Left"), UNSET);
 	if(left != UNSET){
-		int top = AfxGetApp()->GetProfileInt(REG_SECTION, _T("Top"), 0);
-		int width = AfxGetApp()->GetProfileInt(REG_SECTION, _T("Width"), 800);
+		int top    = AfxGetApp()->GetProfileInt(REG_SECTION, _T("Top"), 0);
+		int width  = AfxGetApp()->GetProfileInt(REG_SECTION, _T("Width"), 800);
 		int height = AfxGetApp()->GetProfileInt(REG_SECTION, _T("Height"), 600);
 		CRect rc(left, top, left + width, top + height);
 		// Ensure rect maps to a monitor (avoid restoring off-screen)
@@ -207,10 +208,10 @@ HCURSOR CWiiMControllerDlg::OnQueryDragIcon()
 
 int CWiiMControllerDlg::GetInfoFromDeviceAndPopulateUI()
 {
-	// if this first http request fails, then either the IP address is wrong or the WiiM is offline, in which case the other calls below will fail 
-	// as well, so dont attempt calling them, (and as this isnt yet multi-threaded calling them will make the window unresponsive for longer).
+	// if this first http request fails, then either the IP address is wrong or the WiiM is offline.
 	if(m_httpClient.GetPlayerStatus()){
-		m_httpClient.GetMetaInfo();
+		
+	//	m_httpClient.GetMetaInfo();  not essential when app is opened, and it adds a bit of lag, so don't call it here.
 		LoadEqualiserPresetsList(m_httpClient.GetEQList());
 
 		int EqEnabled = -1;
@@ -228,22 +229,9 @@ int CWiiMControllerDlg::GetInfoFromDeviceAndPopulateUI()
 void CWiiMControllerDlg::SelectListItems()
 {
 	// Hightlight/select the currently playing stream in the list control, by comparing the url's in our list with the url retrieved from the device.
-	// This is a bit of a (harmless) hack at moment for 2 reasons - 
-	// 1) I cannot find a command in the Wiim http API to retrieve the currently playing stream url, but the 'title' field in the getPlayerStatus response usually contains the url of the currently playing stream.
-	// 2) the url in the title field is slightly converted/adjusted from the original url sent to the device, the "%3d" part of a string is converted to =. Below I convert these characters so the comparison works correctly.
-
+	// I cannot find a command in the Wiim http API to retrieve the currently playing stream url, but the 'title' field in the getPlayerStatus response usually contains the url of the currently playing stream.
 	for(int i=0; i<m_StreamURLs.size(); i++){
-		CString list_url = m_StreamURLs[i].url;
-
-	//	if(list_url.GetLength() - Utf8(m_httpClient.m_Wiim.Title).length() == 2){
-		if(list_url.GetLength() - m_httpClient.m_Wiim.Title.length() == 2){
-			int Start = list_url.Find(_T("%3d"));
-			if(Start > 0){
-				// remove %3d from the string and replace with =
-				list_url = list_url.Left(Start) + _T("=") + list_url.Mid(Start + 3);
-			}
-		}
-		if(list_url.Compare(Utf8(m_httpClient.m_Wiim.Title)) == 0){
+		if(m_StreamURLs[i].url == m_httpClient.m_Wiim.Title){
 			m_ListStream.SetItemState(i, LVIS_SELECTED, LVIS_SELECTED);
 			m_ListStream.EnsureVisible(i, FALSE);
 			m_ListStream_SelectedIndex = i;
@@ -251,11 +239,10 @@ void CWiiMControllerDlg::SelectListItems()
 		}
 	}
 
-	// Highlight the currently selected equaliser preset.
-
-	CString CurrentEqName = Utf8(m_httpClient.m_Eq.Name);
+	// Highlight/select the currently selected equaliser preset.
 	for(int i=0; i<m_EqPresetNames.size(); i++){
-		if(m_EqPresetNames[i].Compare(CurrentEqName) == 0){
+		if(m_EqPresetNames[i] == m_httpClient.m_Eq.Name){
+	//	if(m_EqPresetNames[i].compare(m_httpClient.m_Eq.Name) == 0){
 			m_ListEQ.SetItemState(i, LVIS_SELECTED, LVIS_SELECTED);
 			m_ListEQ.EnsureVisible(i, FALSE);
 			m_ListEQ_SelectedIndex = i;
@@ -291,29 +278,31 @@ void CWiiMControllerDlg::LoadEqualiserPresetsList(char *str)
 		size_t len = (end - start) - 1;
 
 		if(len > 0){
-			/* method 1 - works but silly the string type conversion.
 			// use std::string to copy exactly 'len' chars
 			std::string preset(start + 1, len);
-			CString csTemp(preset.c_str());		*/
-
-			// method 2 - more efficient and straightforward, just use CStringA to copy the narrow substring, then convert to CString (TCHAR) using CA2T which handles ANSI/Unicode conversions based on the project settings.
-			// Use CStringA to copy the narrow substring, then convert to CString (TCHAR)
-			CStringA presetA(start + 1, static_cast<int>(len));
-			CString csTemp = CA2T(presetA); // converts using current ANSI/Unicode macros
-
-			m_ListEQ.InsertItem((int)m_EqPresetNames.size(), csTemp);
-			m_EqPresetNames.push_back(csTemp);
+			m_ListEQ.InsertItem((int)m_EqPresetNames.size(), Utf8(preset));
+			m_EqPresetNames.push_back(preset);
 		}
 		str = end + 1;
 	}
+}
+
+void CWiiMControllerDlg::TrimString(std::string &s)
+{
+	// Remove (leading/trailing) whitespace
+	while(!s.empty() && std::isspace(static_cast<unsigned char>(s.front()))) s.erase(s.begin());
+	while(!s.empty() && std::isspace(static_cast<unsigned char>(s.back()))) s.pop_back();
 }
 
 int CWiiMControllerDlg::LoadStreamUrlsFromFile()
 {
 	m_UrlsErrorLog.Empty();
 
-	CStdioFile file;
-	if(!file.Open(m_StreamsFilepath, CFile::modeRead | CFile::typeText)){
+	std::wstring wpath = static_cast<LPCTSTR>(m_StreamsFilepath);
+	std::ifstream infile(wpath, std::ios::binary);
+	// open file in binary mode to ensure we read the raw bytes which is important for correctly handling UTF-8 encoded text files. 
+	// std::ifstream can handle wide-character paths on Windows, so we can pass the wide string directly without converting it to UTF-8.
+	if(!infile.is_open()){
 		m_UrlsErrorLog += _T("\r\nError opening direct stream urls file : \r\n     ") + m_StreamsFilepath;
 		return 0;
 	}
@@ -321,40 +310,58 @@ int CWiiMControllerDlg::LoadStreamUrlsFromFile()
 	m_ListStream.DeleteAllItems(); // Clear existing items before loading new ones
 	m_StreamURLs.clear();
 	m_StreamURLs.reserve(256); // reserve some space to avoid multiple reallocations.
-	int Ok = 1;
-	CString line, last_category = _T("");
 
-	while(file.ReadString(line) && Ok){
-		line.Trim();			// Remove (leading/trailing) whitespace
-		if(!line.IsEmpty()){	// skip empty lines
+	bool Ok = true, FirstLine = true;
+	std::string line, last_category = "";
+
+	while(std::getline(infile, line) && Ok){
+
+		if(FirstLine){
+			FirstLine = false;
+			if(!line.empty() && line.size()>=3 &&
+				static_cast<unsigned char>(line[0]) == 0xEF && 
+				static_cast<unsigned char>(line[1]) == 0xBB &&
+				static_cast<unsigned char>(line[2]) == 0xBF)
+			{
+				line.erase(0, 3);
+				continue; // skip UTF-8 BOM if present at the start of the file  (text.starts_with("\xEF\xBB\xBF"))
+			}
+		}
+
+		TrimString(line);
+		if(!line.empty()){    // skip empty lines
 			if(line[0] == '#'){
 				// store the category name without the '#' character
-				last_category = line.Mid(1).Trim();
+				last_category = line.substr(1);
+				TrimString(last_category);
 			}
 			else{
 				// name and url
-				CString name = line;
+				std::string url, name = line;
 				// read URL line
-				while(file.ReadString(line) && Ok){
-					line.Trim();			// Remove (leading/trailing) whitespace
-					if(!line.IsEmpty()){
-						if(line.Find(_T("http")) != 0){
-							m_UrlsErrorLog += _T("\r\nFormatting error in direct stream urls .txt file. \r\nURL expected on the line after stream name <") + name + _T(">. \r\nList incomplete - stopping loading further entries.");
-							Ok = 0;
+				while(std::getline(infile, line) && Ok){
+					TrimString(line);
+					if(!line.empty()){
+						if(line.rfind("http", 0) != 0){
+							// convert name to CString to include in error message
+							CString tmpName(name.c_str());
+							m_UrlsErrorLog += _T("\r\nFormatting error in direct stream urls .txt file. \r\nURL expected on the line after stream name <") + tmpName + _T(">. \r\nList incomplete - stopping loading further entries.");
+							Ok = false;
 						}
 						else{
 							// success - got the url line
+							url = line;
 							break;
 						}
 					}
 				}
 				if(Ok)
-					m_StreamURLs.push_back({last_category, name, line});
+					m_StreamURLs.push_back({last_category, name, url});
 			}
 		}
 	}
-	file.Close();
-	return 1;	// gonna return 1 even if there were some errors reading the file, therefore any entries that were successfully read will be displayed.
+	infile.close();
+	return 1;    // gonna return 1 even if there were some errors reading the file, therefore any entries that were successfully read will be displayed.
 }
 
 void CWiiMControllerDlg::OnLvnItemchangedListStreamurl(NMHDR *pNMHDR, LRESULT *pResult)
@@ -368,9 +375,7 @@ void CWiiMControllerDlg::OnLvnItemchangedListStreamurl(NMHDR *pNMHDR, LRESULT *p
 
 				m_ListStream_SelectedIndex = pNMLV->iItem;
 				TRACE("\n\nItemchanged ListStreamurl %d  ", m_ListStream_SelectedIndex);
-
-				std::string url = CT2A(m_StreamURLs[m_ListStream_SelectedIndex].url);
-				m_httpClient.PlayUrl(url);
+				m_httpClient.PlayUrl(m_StreamURLs[m_ListStream_SelectedIndex].url);
 				UpdateStatusEditBox();
 			}
 		}
@@ -388,14 +393,14 @@ void CWiiMControllerDlg::OnLvnItemchangedListEq(NMHDR *pNMHDR, LRESULT *pResult)
 
 				m_ListEQ_SelectedIndex = pNMLV->iItem;
 				TRACE("\n\nItemchanged ListEq %d  ", m_ListEQ_SelectedIndex);
-
-				CString name = m_EqPresetNames[pNMLV->iItem];
+				std::string name = m_EqPresetNames[pNMLV->iItem];
 				// replace ' ' with '+' in the equaliser profile name, as this is what the device expects for some reason, even though the presets list sent by the device 
 				// have spaces in their names, when sending a command to change to one of those presets it expects the spaces to be replaced with + symbols.
-				name.Replace(' ', '+');
-				// convert to narrow string for the HTTP client (CT2A handles Unicode/ANSI conversions)
-				CT2A ansiName(name);
-				if(m_httpClient.EQLoad(ansiName))
+				for(size_t i=0; i<name.length(); ++i)
+					if(name[i] == ' ')
+						name[i] = '+';
+
+				if(m_httpClient.EQLoad(name))
 					GetDlgItem(IDC_BTN_TOGGLE_EQ)->SetWindowText(EQ_ON_TEXT);
 			}
 		}
@@ -414,9 +419,12 @@ void CWiiMControllerDlg::LoadStreamUrlList()
 {
 	if(LoadStreamUrlsFromFile()){
 		for(int i=0; i<m_StreamURLs.size(); i++){
-			int item = m_ListStream.InsertItem(i, m_StreamURLs[i].category);
-			m_ListStream.SetItemText(item, 1, m_StreamURLs[i].name);
-			m_ListStream.SetItemText(item, 2, m_StreamURLs[i].url);
+			CString cat  = Utf8(m_StreamURLs[i].category);
+			CString name = Utf8(m_StreamURLs[i].name);
+			CString url  = Utf8(m_StreamURLs[i].url);
+			int item = m_ListStream.InsertItem(i, cat);
+			m_ListStream.SetItemText(item, 1, name);
+			m_ListStream.SetItemText(item, 2, url);
 		}
 	}
 }
@@ -441,9 +449,9 @@ void CWiiMControllerDlg::UpdateStatusEditBox()
 		m_UrlsErrorLog.Empty(); // any errors in here arent needed/wanted now.
 	}
 	else{
-		if(m_httpClient.GetNewError(error) || !m_UrlsErrorLog.IsEmpty()){
-			if(!m_UrlsErrorLog.IsEmpty())
-				error += m_UrlsErrorLog;
+		std::string httpError;
+		if(m_httpClient.GetNewError(httpError) || !m_UrlsErrorLog.IsEmpty()){
+			error = Utf8(httpError) + m_UrlsErrorLog;
 			GetDlgItem(IDC_EDIT_STATUS)->SetWindowText(error);
 		}
 		else{
@@ -466,7 +474,7 @@ void CWiiMControllerDlg::UpdatePlayerStatusString()
 			// raw stream url. When getMetaData request is used url is put in title, but it also alters some characters, so use the original url from the list.
 			CString Title = Utf8(m_httpClient.m_Wiim.Title);
 			if(m_ListStream_SelectedIndex != -1)
-				Title = m_StreamURLs[m_ListStream_SelectedIndex].url;
+				Title = Utf8(m_StreamURLs[m_ListStream_SelectedIndex].url);
 
 			m_LastStatus.Format(_T("Vendor: %s\r\nStream URL: %s\r\nPosition: %s\r\nStatus: %s\r\nVolume: %d, Mute: %d"),
 				Utf8(m_httpClient.m_Wiim.vendor),
@@ -555,33 +563,3 @@ void CWiiMControllerDlg::OnIpnFieldchangedIpaddressWiim(NMHDR *pNMHDR, LRESULT *
 	*pResult = 0;
 	// not using this... instead I will retrieve the IP address in the destroy window handler and save it to the registry there.
 }
-
-/* NOTES
-
-* CString advantages
-Integrates perfectly with MFC controls (SetItemText, MessageBox, etc.)
-Automatic conversion to/from LPCTSTR
-Built‑in formatting (Format)
-Built‑in trimming, searching, replacing
-Handles Unicode correctly without extra work
-
-* std::string advantages
-Standard C++ (portable)
-Works well with STL algorithms
-Often faster for pure C++ logic
-No dependency on MFC
-
-* The hybrid approach (best for MFC apps)
-Most MFC applications naturally end up using both:
-UI layer → CString
-Internal data → std::string
-
-* Example of clean conversion between CString and std::string
-CString to std::string  
-std::string s = CT2A(cstr);
-
-std::string to CString
-CString cstr = CA2T(s.c_str());
-
-These macros handle Unicode/ANSI correctly.
-*/

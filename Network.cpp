@@ -29,12 +29,12 @@ CWiimHttpClient::~CWiimHttpClient()
 static size_t CurlMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp)
 {
 	size_t realsize = size * nmemb;
-	RESPONSE_MEM *pMS = (RESPONSE_MEM*)userp;
+	RESPONSE_MEM *pMS = static_cast<RESPONSE_MEM*>(userp);
 
 	if(realsize >= pMS->mem_size){		// the +1 is for the null terminator we will add at the end of the data block. This check ensures we have enough space to store the new data plus the null terminator.
 		char *pOldBuf = pMS->memory;
 		pMS->mem_size = realsize + 1 + 1024; // Add some extra space, +1 for the null terminator, and the rest to reduce the number of reallocations.
-		pMS->memory = (char*)realloc(pMS->memory, pMS->mem_size);		
+		pMS->memory = static_cast<char*>(realloc(pMS->memory, pMS->mem_size));		
 		if(pMS->memory == NULL){
 			pMS->error += "\r\n Error - Failed to allocate memory for HTTP response. The device may be sending a very large response or there may be insufficient memory available.";
 			if(pOldBuf)
@@ -100,7 +100,7 @@ int CWiimHttpClient::HttpRequest(std::string &url)
 		// send all data to this function
 		curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, CurlMemoryCallback);
 		// we pass our m_data struct to the callback function
-		curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void*)&m_data);
+		curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, static_cast<void*>(&m_data));
 
 		if(m_data.error != "")
 			m_CurlErrorLog += m_data.error;
@@ -139,7 +139,7 @@ int CWiimHttpClient::CurlGlobalInit_Ok()
 
 	if(m_data.memory==NULL && m_CurlErrorLog==""){	// m_CurlErrorLog=="" ensures there will only be one attempt, to allocate memory for the response.
 		m_data.mem_size = 10000;	// initial size, will be grown as needed by realloc in the callback.
-		m_data.memory = (char*)malloc(m_data.mem_size);
+		m_data.memory = static_cast<char*>(malloc(m_data.mem_size));
 		m_data.error = "";
 		if(m_data.memory == NULL){
 			m_CurlErrorLog += "\r\n Error - Failed to allocate memory for CURL response";
@@ -216,8 +216,9 @@ int CWiimHttpClient::GetPlayerStatus()
 
 int CWiimHttpClient::PlayUrl(const std::string& url)
 {
-//	if(SendCommand("setPlayerCmd", "playlist", url, "0")){	this command can be used instead of below.
 	if(SendCommand("setPlayerCmd", "play", url)){
+		// SendCommand("setPlayerCmd", "playlist", url, "0") this command is similar
+		// 
 		// when we play a raw stream url, getMetaInfo doesnt work properly, we dont get artist and title etc. 
 		// below I populate the fields which are static in the same way as getMetaInfo does it, the non-static fields (eg, sampleRate) will be populated when getMetaInfo is called.
 		m_Wiim.Title = url;
@@ -249,7 +250,7 @@ int CWiimHttpClient::GetEqStatus(int &EqualiserOn)
 	return Ok;
 }
 
-int CWiimHttpClient::GetNewError(CString &ErrorString)
+int CWiimHttpClient::GetNewError(std::string &ErrorString)
 {
 	// only return 1, and error string, if theres a new(additional) error since the last time this was called.
 	// check if error string is the same length as it was last time, if its not then return the new error so it can be displayed in UI.
@@ -257,16 +258,16 @@ int CWiimHttpClient::GetNewError(CString &ErrorString)
 	size_t ErrorLength = m_CurlErrorLog.length() + m_ResponseErrorLog.length();
 	if(ErrorLength != PrevErrorLength){
 		PrevErrorLength = ErrorLength;
-		ErrorString = Utf8(m_CurlErrorLog + m_ResponseErrorLog);
+		ErrorString = m_CurlErrorLog + m_ResponseErrorLog;
 		return 1;
 	}
 	return 0;
 }
 
-int CWiimHttpClient::EQLoad(char *pName)
+int CWiimHttpClient::EQLoad(const std::string &Name)
 {
 	// SendCommand("EQLoad", "Classical");
-	if(SendCommand("EQLoad", pName)){
+	if(SendCommand("EQLoad", Name)){
 		m_EqualiserOn = 1;
 		return 1;
 	}
@@ -326,11 +327,13 @@ int CWiimHttpClient::VolumeStep(int step)
 
 std::string CWiimHttpClient::ExtractArtworkUrl(const std::string& vendor)
 {
+	std::string url = UrlDecode(vendor);
+
 	const std::string key = "artwork_url=";
-	size_t pos = vendor.find(key);
+	size_t pos = url.find(key);
 	if (pos == std::string::npos)
 		return "";
-	std::string encoded = vendor.substr(pos + key.length());
+	std::string encoded = url.substr(pos + key.length());
 	return UrlDecode(encoded);
 }
 
@@ -347,9 +350,16 @@ std::string CWiimHttpClient::FormatTimeMs(const std::string& msStr)
 
 std::string CWiimHttpClient::UrlDecode(const std::string& src)
 {
+	// Use this if I want to display the decoded url in the UI, however, I prefer to display it un-decoded.
+
+/*	URL Encoding (Percent Encoding)
+	URL encoding converts characters into a format that can be transmitted over the Internet.
+	URLs can only be sent over the Internet using the ASCII character-set.
+	Since URLs often contain characters outside the ASCII set, the URL has to be converted into a valid ASCII format.
+	URL encoding replaces unsafe ASCII characters with a "%" followed by two hexadecimal digits.
+*/
 	std::string out;
 	out.reserve(src.size());
-
 	for(size_t i=0; i<src.size(); ++i){
 		if (src[i] == '+')
 			out.push_back(' ');
@@ -387,12 +397,12 @@ int CWiimHttpClient::ParseJsonString_PlayerStatus()
 	m_Wiim.vol       = std::stoi(j.value("vol", "0"));
 	m_Wiim.mute      = std::stoi(j.value("mute", "0"));
 	// Strings
-	m_Wiim.vendor     = UrlDecode(j.value("vendor", ""));
+	m_Wiim.vendor     = j.value("vendor", "");	// UrlDecode()
 	m_Wiim.status     = j.value("status", "");
 	m_Wiim.curpos     = j.value("curpos", "");
 	m_Wiim.offset_pts = j.value("offset_pts", "");
 	m_Wiim.totlen     = j.value("totlen", "");
-	// Hex → UTF‑8
+	// Hex to UTF-8 
 	m_Wiim.Title  = HexToUtf8(j.value("Title", ""));
 	m_Wiim.Artist = HexToUtf8(j.value("Artist", ""));
 	m_Wiim.Album  = HexToUtf8(j.value("Album", ""));
@@ -402,7 +412,7 @@ int CWiimHttpClient::ParseJsonString_PlayerStatus()
 	m_Wiim.curpos_fmt = FormatTimeMs(m_Wiim.curpos);
 	m_Wiim.totlen_fmt = FormatTimeMs(m_Wiim.totlen);
 	// Artwork URL (if present)
-	m_Wiim.ArtUrl = ExtractArtworkUrl(m_Wiim.vendor);
+	//m_Wiim.ArtUrl = ExtractArtworkUrl(m_Wiim.vendor);
 	return 1;
 }
 

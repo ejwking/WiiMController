@@ -6,11 +6,12 @@
 
 #include "Network.h"
 #include <vector>
+#include <string>
 
 
 struct STREAMINFO
 {
-	CString category, name, url;
+	std::string category, name, url;
 };
 
 struct IPADDRESS
@@ -27,15 +28,17 @@ public:
 
 	int m_Initialised;
 
-	CWiimHttpClient         m_httpClient;
-	CIPAddressCtrl          m_IPCtrl;
-	CListCtrl               m_ListStream, m_ListEQ;
-	CFont                   m_HeaderFont;
-	std::vector<CString>    m_EqPresetNames; 
-	std::vector<STREAMINFO> m_StreamURLs;
-	CString                 m_StreamsFilepath, m_LastStatus, m_UrlsErrorLog;
-	IPADDRESS               m_IPAddress;
-	int                     m_ListStream_SelectedIndex, m_ListEQ_SelectedIndex;
+	CWiimHttpClient m_httpClient;
+	CIPAddressCtrl  m_IPCtrl;
+	CFont           m_HeaderFont;
+	CString         m_StreamsFilepath, m_LastStatus, m_UrlsErrorLog;
+	IPADDRESS       m_IPAddress;
+	
+	// UI list data
+	CListCtrl                m_ListStream, m_ListEQ;
+	std::vector<std::string> m_EqPresetNames; 
+	std::vector<STREAMINFO>  m_StreamURLs;
+	int                      m_ListStream_SelectedIndex, m_ListEQ_SelectedIndex;
 
 	int  LoadStreamUrlsFromFile();
 	void LoadStreamUrlList();
@@ -46,6 +49,7 @@ public:
 	int  GetInfoFromDeviceAndPopulateUI();
 	void RestoreWindowPos();
 	void ApplyCustomFont();
+	void TrimString(std::string &s);
 
 // Dialog Data
 #ifdef AFX_DESIGN_TIME

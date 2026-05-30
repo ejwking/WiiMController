@@ -66,8 +66,8 @@ public:
 	int TogglePlay();
 	int PlayUrl(const std::string& url);
 	int GetEqStatus(int &EqualiserOn);
-	int GetNewError(CString &ErrorString);
-	int EQLoad(char *pName);
+	int GetNewError(std::string &ErrorString);
+	int EQLoad(const std::string &Name);
 	int ToggleMute();
 	int VolumeStep(int step); // positive or negative
 	int ToggleEqualiserOnOff();
