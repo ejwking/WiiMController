@@ -228,8 +228,8 @@ int CWiiMControllerDlg::GetInfoFromDeviceAndPopulateUI()
 
 void CWiiMControllerDlg::SelectListItems()
 {
-	// Hightlight/select the currently playing stream in the list control, by comparing the url's in our list with the url retrieved from the device.
-	// I cannot find a command in the Wiim http API to retrieve the currently playing stream url, but the 'title' field in the getPlayerStatus response usually contains the url of the currently playing stream.
+	// Hightlight/select the currently playing stream in the list control, by comparing the url's in our list with the url retrieved from the device. I cannot find a command in 
+	// the Wiim http API to retrieve the currently playing stream url, but the 'title' field in the getPlayerStatus response usually contains the url of the currently playing stream.
 	for(int i=0; i<m_StreamURLs.size(); i++){
 		if(m_StreamURLs[i].url == m_httpClient.m_Wiim.Title){
 			m_ListStream.SetItemState(i, LVIS_SELECTED, LVIS_SELECTED);
@@ -289,12 +289,29 @@ void CWiiMControllerDlg::LoadEqualiserPresetsList(char *str)
 
 void CWiiMControllerDlg::TrimString(std::string &s)
 {
-	// Remove (leading/trailing) whitespace
+	// Remove (leading/trailing) whitespace, and other non-printable characters (eg, control characters like '\r'), from the start and end of the string.
 	while(!s.empty() && std::isspace(static_cast<unsigned char>(s.front()))) s.erase(s.begin());
 	while(!s.empty() && std::isspace(static_cast<unsigned char>(s.back()))) s.pop_back();
 }
 
-int CWiiMControllerDlg::LoadStreamUrlsFromFile()
+int CWiiMControllerDlg::HasBOM(std::string &line)
+{
+	// Check for UTF-8 BOM on the first line of the file, and if found, remove it. 
+	// The UTF-8 BOM consists of the byte sequence 0xEF, 0xBB, 0xBF at the start of the file. 
+	if(!line.empty() && line.size()>=3 &&
+		static_cast<unsigned char>(line[0]) == 0xEF && 
+		static_cast<unsigned char>(line[1]) == 0xBB &&
+		static_cast<unsigned char>(line[2]) == 0xBF)
+	{
+		line.erase(0, 3);
+		return 1; // BOM found
+	}
+	return 0; // No BOM
+}
+
+// Text file must be UTF-8 encoded, and if it has a BOM at the start of the file, it will be skipped. Each stream entry in the file should consist 
+// of a name line followed by a url line, with optional category lines starting with '#' to group streams. Empty lines are ignored.
+bool CWiiMControllerDlg::LoadStreamUrlsFromUtf8File()
 {
 	m_UrlsErrorLog.Empty();
 
@@ -304,30 +321,22 @@ int CWiiMControllerDlg::LoadStreamUrlsFromFile()
 	// std::ifstream can handle wide-character paths on Windows, so we can pass the wide string directly without converting it to UTF-8.
 	if(!infile.is_open()){
 		m_UrlsErrorLog += _T("\r\nError opening direct stream urls file : \r\n     ") + m_StreamsFilepath;
-		return 0;
+		return false;
 	}
 
 	m_ListStream.DeleteAllItems(); // Clear existing items before loading new ones
 	m_StreamURLs.clear();
 	m_StreamURLs.reserve(256); // reserve some space to avoid multiple reallocations.
-
 	bool Ok = true, FirstLine = true;
 	std::string line, last_category = "";
 
+	// UTF-8 itself does not break std::getline(), because UTF-8 is byte-oriented and newline remains normal ASCII.
 	while(std::getline(infile, line) && Ok){
-
 		if(FirstLine){
 			FirstLine = false;
-			if(!line.empty() && line.size()>=3 &&
-				static_cast<unsigned char>(line[0]) == 0xEF && 
-				static_cast<unsigned char>(line[1]) == 0xBB &&
-				static_cast<unsigned char>(line[2]) == 0xBF)
-			{
-				line.erase(0, 3);
-				continue; // skip UTF-8 BOM if present at the start of the file  (text.starts_with("\xEF\xBB\xBF"))
-			}
+			if(HasBOM(line))	// skip UTF-8 BOM if present at the start of the file  (text.starts_with("\xEF\xBB\xBF"))
+				continue;
 		}
-
 		TrimString(line);
 		if(!line.empty()){    // skip empty lines
 			if(line[0] == '#'){
@@ -342,10 +351,9 @@ int CWiiMControllerDlg::LoadStreamUrlsFromFile()
 				while(std::getline(infile, line) && Ok){
 					TrimString(line);
 					if(!line.empty()){
-						if(line.rfind("http", 0) != 0){
-							// convert name to CString to include in error message
-							CString tmpName(name.c_str());
-							m_UrlsErrorLog += _T("\r\nFormatting error in direct stream urls .txt file. \r\nURL expected on the line after stream name <") + tmpName + _T(">. \r\nList incomplete - stopping loading further entries.");
+						if(!line.starts_with("http://") && !line.starts_with("https://")){
+							m_UrlsErrorLog += _T("Formatting error in - ") + m_StreamsFilepath + _T(" \r\nThe following name/url combination has an invalid URL:\r\n\r\nname:\t") + 
+												Utf8(name) + _T("\r\nurl:\t") + Utf8(line) + _T("\r\n\r\nFIX THE ERRORS then press the 'refresh list' button to reload the list");
 							Ok = false;
 						}
 						else{
@@ -361,7 +369,7 @@ int CWiiMControllerDlg::LoadStreamUrlsFromFile()
 		}
 	}
 	infile.close();
-	return 1;    // gonna return 1 even if there were some errors reading the file, therefore any entries that were successfully read will be displayed.
+	return Ok;
 }
 
 void CWiiMControllerDlg::OnLvnItemchangedListStreamurl(NMHDR *pNMHDR, LRESULT *pResult)
@@ -417,20 +425,17 @@ void CWiiMControllerDlg::OnBnClickedBtnToggleEq()
 
 void CWiiMControllerDlg::LoadStreamUrlList()
 {
-	if(LoadStreamUrlsFromFile()){
+	if(LoadStreamUrlsFromUtf8File()){
 		for(int i=0; i<m_StreamURLs.size(); i++){
-			CString cat  = Utf8(m_StreamURLs[i].category);
-			CString name = Utf8(m_StreamURLs[i].name);
-			CString url  = Utf8(m_StreamURLs[i].url);
-			int item = m_ListStream.InsertItem(i, cat);
-			m_ListStream.SetItemText(item, 1, name);
-			m_ListStream.SetItemText(item, 2, url);
+			int item = m_ListStream.InsertItem(i, Utf8(m_StreamURLs[i].category));
+			m_ListStream.SetItemText(item, 1, Utf8(m_StreamURLs[i].name));
+			m_ListStream.SetItemText(item, 2, Utf8(m_StreamURLs[i].url));
 		}
 	}
 }
 
 #define UNSET_URL_TEXT	_T("Set the IP address of your WiiM device in the control above (restart app to apply new IP).")
-#define UNSET_PATH_TEXT	_T("Press 'open' button at the bottom to open file containing the list of direct stream urls.\r\n   (See the example internet_radio.txt provided on GitHub)")
+#define UNSET_PATH_TEXT	_T("Press 'open' button to open the file containing the list of direct stream urls.\r\n   (See example .txt file <internet_radio.txt> provided on GitHub)")
 void CWiiMControllerDlg::UpdateStatusEditBox()
 {
 	// Error messages to be displayed in the UI. (This has become a bit complicated).

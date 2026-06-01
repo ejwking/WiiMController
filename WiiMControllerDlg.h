@@ -40,7 +40,7 @@ public:
 	std::vector<STREAMINFO>  m_StreamURLs;
 	int                      m_ListStream_SelectedIndex, m_ListEQ_SelectedIndex;
 
-	int  LoadStreamUrlsFromFile();
+	bool LoadStreamUrlsFromUtf8File();
 	void LoadStreamUrlList();
 	void UpdatePlayerStatusString();
 	void LoadEqualiserPresetsList(char *str);
@@ -50,6 +50,7 @@ public:
 	void RestoreWindowPos();
 	void ApplyCustomFont();
 	void TrimString(std::string &s);
+	int  HasBOM(std::string &line);
 
 // Dialog Data
 #ifdef AFX_DESIGN_TIME
