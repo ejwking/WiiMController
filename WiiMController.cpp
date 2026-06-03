@@ -8,6 +8,11 @@
 #include "WiiMControllerDlg.h"
 
 #ifdef _DEBUG
+#define _CRTDBG_MAP_ALLOC
+#include <crtdbg.h>
+#endif
+
+#ifdef _DEBUG
 #define new DEBUG_NEW
 #endif
 
@@ -37,6 +42,20 @@ CWiiMControllerApp theApp;
 
 BOOL CWiiMControllerApp::InitInstance()
 {
+#ifdef _DEBUG
+	// Enable CRT leak checks and dump leaks at program exit. Set a break alloc
+	// number with _CrtSetBreakAlloc(n) when tracking a specific allocation ID.
+	auto EnableCrtLeakChecks = []()
+	{
+		int flags = _CrtSetDbgFlag(_CRTDBG_REPORT_FLAG);
+		flags |= _CRTDBG_LEAK_CHECK_DF; // dump leaks at exit
+		_CrtSetDbgFlag(flags);
+
+		// To break when a specific allocation occurs, uncomment and set the ID:
+		//_CrtSetBreakAlloc(117);
+	};
+	EnableCrtLeakChecks();
+#endif
 	// InitCommonControlsEx() is required on Windows XP if an application
 	// manifest specifies use of ComCtl32.dll version 6 or later to enable
 	// visual styles.  Otherwise, any window creation will fail.

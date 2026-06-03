@@ -73,7 +73,7 @@ public:
 	
 	afx_msg void OnLvnItemchangedListEq(NMHDR *pNMHDR,LRESULT *pResult);
 	afx_msg void OnLvnItemchangedListStreamurl(NMHDR *pNMHDR,LRESULT *pResult);
-	afx_msg void OnBnClickedBtnLoadFile();
+	afx_msg void OnBnClickedBtnRefreshList();
 	afx_msg void OnBnClickedBtnOpen();
 	afx_msg void OnBnClickedBtnToggleEq();
 	afx_msg void OnBnClickedBtnRefreshStats();

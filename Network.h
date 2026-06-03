@@ -75,7 +75,7 @@ public:
 private:
 	RESPONSE_MEM m_data;
 	int m_CurlGlobalInit;
-	int m_EqualiserOn = 0;
+	int m_EqualiserOn;
 
 	int ParseJsonString_PlayerStatus();
 	int ParseJsonString_EqBand();

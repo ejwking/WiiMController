@@ -44,7 +44,7 @@ BEGIN_MESSAGE_MAP(CWiiMControllerDlg, CDialog)
 	ON_NOTIFY(LVN_ITEMCHANGED,IDC_LIST_EQ,&CWiiMControllerDlg::OnLvnItemchangedListEq)
 	ON_NOTIFY(IPN_FIELDCHANGED,IDC_IPADDRESS_WIIM,&CWiiMControllerDlg::OnIpnFieldchangedIpaddressWiim)
 
-	ON_BN_CLICKED(IDC_BTN_LOAD_FILE,&CWiiMControllerDlg::OnBnClickedBtnLoadFile)
+	ON_BN_CLICKED(IDC_BTN_LOAD_FILE,&CWiiMControllerDlg::OnBnClickedBtnRefreshList)
 	ON_BN_CLICKED(IDC_BTN_OPEN,&CWiiMControllerDlg::OnBnClickedBtnOpen)
 	ON_BN_CLICKED(IDC_BTN_TOGGLE_EQ,&CWiiMControllerDlg::OnBnClickedBtnToggleEq)
 	ON_BN_CLICKED(IDC_BTN_REFRESH_STATS,&CWiiMControllerDlg::OnBnClickedBtnRefreshStats)
@@ -512,9 +512,10 @@ void CWiiMControllerDlg::UpdatePlayerStatusString()
 	}
 }
 
-void CWiiMControllerDlg::OnBnClickedBtnLoadFile()
+void CWiiMControllerDlg::OnBnClickedBtnRefreshList()
 {
 	LoadStreamUrlList();
+	SelectListItems();
 	UpdateStatusEditBox();
 }
 
@@ -525,7 +526,7 @@ void CWiiMControllerDlg::OnBnClickedBtnOpen()
 		m_StreamsFilepath = FileDlg.GetPathName();
 		GetDlgItem(IDC_EDIT_STREAMSFILE)->SetWindowText(m_StreamsFilepath);
 		AfxGetApp()->WriteProfileString(REG_SECTION, _T("StreamsFilepath"), m_StreamsFilepath);
-		OnBnClickedBtnLoadFile();
+		OnBnClickedBtnRefreshList();
 	}
 }
 

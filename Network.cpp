@@ -8,21 +8,28 @@ using json = nlohmann::json;
 
 CWiimHttpClient::CWiimHttpClient()
 {
-	m_CurlErrorLog = "";
-	m_ResponseErrorLog = "";
+	m_CurlErrorLog.clear();
+	m_ResponseErrorLog.clear();
 	m_CurlGlobalInit = 0;
+	m_EqualiserOn = 0;
 	m_IPset = 0;
-	memset(&m_data, 0, sizeof(m_data));
+	// DO NOT memset a struct that contains std::string (or other non-trivial members). That overwrites internal std::string 
+	// state and causes leaks / undefined behaviour. Initialize members explicitly instead.
+	m_data.memory = nullptr;
+	m_data.mem_size = 0;
+	m_data.response_size = 0;
+	m_data.error.clear();
 }
 
 CWiimHttpClient::~CWiimHttpClient()
 {
 	if(m_CurlGlobalInit){
-		free(m_data.memory);
 		// we are done with libcurl, so clean it up 
 		curl_global_cleanup();
 		m_CurlGlobalInit = 0;
 	}
+	if(m_data.memory != nullptr)
+		free(m_data.memory);
 }
 
 // To put this callback in CWiimHttpClient it must be declared as static, and to access class members/data a 'this' pointer must be passed in via the userp argument. This is a common pattern for using C-style callbacks in C++ classes.
@@ -31,22 +38,27 @@ static size_t CurlMemoryCallback(void *contents, size_t size, size_t nmemb, void
 	size_t realsize = size * nmemb;
 	RESPONSE_MEM *pMS = static_cast<RESPONSE_MEM*>(userp);
 
-	if(realsize >= pMS->mem_size){		// the +1 is for the null terminator we will add at the end of the data block. This check ensures we have enough space to store the new data plus the null terminator.
+	if(pMS->memory == nullptr)	// just for safety and clarity - but null here is impossible due to earlier checks.
+		return 0;
+
+	if(realsize >= pMS->mem_size){	// the +1 (>=) is for the null terminator we will add at the end of the data block. This check ensures we have enough space to store the new data plus the null terminator.
+		
 		char *pOldBuf = pMS->memory;
 		pMS->mem_size = realsize + 1 + 1024; // Add some extra space, +1 for the null terminator, and the rest to reduce the number of reallocations.
 		pMS->memory = static_cast<char*>(realloc(pMS->memory, pMS->mem_size));		
-		if(pMS->memory == NULL){
+
+		if(pMS->memory == nullptr){
 			pMS->error += "\r\n Error - Failed to allocate memory for HTTP response. The device may be sending a very large response or there may be insufficient memory available.";
-			if(pOldBuf)
-				free(pOldBuf);
-			pMS->mem_size = 0;
-			pMS->memory = NULL;
+			free(pOldBuf);
+			return 0;
 		}
 	}
+
 	if(memcpy_s(pMS->memory, pMS->mem_size, contents, realsize) != 0){
 		pMS->error += "\r\n Error - Failed to copy memory from HTTP request.";
 		return 0;
 	}
+
 	pMS->memory[realsize] = 0;	// null terminate the string
 	pMS->response_size = realsize + 1;
 	return realsize;
@@ -101,22 +113,22 @@ int CWiimHttpClient::HttpRequest(std::string &url)
 		curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, CurlMemoryCallback);
 		// we pass our m_data struct to the callback function
 		curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, static_cast<void*>(&m_data));
-
-		if(m_data.error != "")
-			m_CurlErrorLog += m_data.error;
-
 		// some servers do not like requests that are made without a user-agent	field, so we provide one
 		curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
 		// get it!
 		code = curl_easy_perform(curl_handle);
 		// check for errors
+
+		if(m_data.error != "")
+			m_CurlErrorLog += m_data.error;
+
 		if(code != CURLE_OK){
 			m_CurlErrorLog += "\r\n Error - curl_easy_perform() failed: ";
 			m_CurlErrorLog += curl_easy_strerror(code);
 			m_CurlErrorLog += "\r\n ..( device is offline or IP address is incorrect )";
 		}
 		else{
-			// Now, our m_data.memory points to a memory block that is m_data.response_size bytes big and contains the remote file. Do something nice with it.
+			// Now our m_data.memory points to a memory block that is m_data.response_size bytes big and contains the remote file.
 			TRACE("\nrequest: %s\n%d bytes retrieved\n%s\n\n", url.c_str(), m_data.response_size, m_data.memory);
 			Ok = 1;
 		}
@@ -137,16 +149,15 @@ int CWiimHttpClient::CurlGlobalInit_Ok()
 		m_CurlGlobalInit = 1;
 	}
 
-	if(m_data.memory==NULL && m_CurlErrorLog==""){	// m_CurlErrorLog=="" ensures there will only be one attempt, to allocate memory for the response.
+	if(m_data.memory==nullptr && m_data.mem_size==0){	// m_data.mem_size==0 ensures there will only be one attempt to allocate memory here.
+		
 		m_data.mem_size = 10000;	// initial size, will be grown as needed by realloc in the callback.
-		m_data.memory = static_cast<char*>(malloc(m_data.mem_size));
-		m_data.error = "";
-		if(m_data.memory == NULL){
+		m_data.memory   = static_cast<char*>(malloc(m_data.mem_size));
+		if(m_data.memory == nullptr)
 			m_CurlErrorLog += "\r\n Error - Failed to allocate memory for CURL response";
-			m_data.mem_size = 0;
-		}
 	}
-	return (m_CurlGlobalInit && m_data.memory!=NULL);
+
+	return (m_CurlGlobalInit && m_data.memory!=nullptr);
 }
 
 int CWiimHttpClient::SendCommand(const std::string& command, const std::string& arg_1, const std::string& arg_2, const std::string& arg_3)
@@ -289,7 +300,7 @@ char *CWiimHttpClient::GetEQList()
 		// [ "Flat", "Acoustic", "Bass Booster", "Bass Reducer", "Classical", "Dance", "Deep", "Electronic", "Game", "Hip-Hop", "Jazz", "Latin", "Loudness", "Lounge", "Movie", "Piano", "Pop", "R&B", "Rock", "Small Speakers", "Spoken Word", "Treble Booster", "Treble Reducer", "Vocal Booster", "bass up treble down", "low frequencys up", "middle down", "middle down 2" ]
 		return m_data.memory;
 	}
-	return NULL;
+	return nullptr;
 }
 
 int CWiimHttpClient::TogglePlay()
